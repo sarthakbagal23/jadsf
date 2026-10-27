@@ -6,13 +6,13 @@ Then on your phone (same Wi-Fi, or anywhere via Tailscale):
 
 The home page is a small mobile-friendly chat UI — no app to install.
 """
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 import memory
 from brain import ask
-from config import NAME, SERVER_PORT
+from config import NAME, SERVER_HOST, SERVER_PORT, SERVER_TOKEN
 
 app = FastAPI(title=NAME)
 
@@ -36,12 +36,19 @@ function add(t,c){const d=document.createElement('div');d.className='msg '+c;d.t
 async function send(){
   const m=inp.value.trim(); if(!m) return; inp.value='';
   add(m,'you');
-  const r=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m})});
+  const r=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+(localStorage.tok||'')},body:JSON.stringify({message:m})});
+  if(r.status===401){const t=prompt('JARVIS access token:'); if(t){localStorage.tok=t; inp.value=m; log.lastChild.remove(); return send();} add('Not authorized.','jarvis'); return;}
   const j=await r.json(); add(j.reply,'jarvis');
 }
 inp.addEventListener('keydown',e=>{if(e.key==='Enter')send();});
 </script></body></html>
 """
+
+
+def auth(authorization: str = Header(default="")):
+    """If JARVIS_TOKEN is set, every API call must send 'Authorization: Bearer <token>'."""
+    if SERVER_TOKEN and authorization != f"Bearer {SERVER_TOKEN}":
+        raise HTTPException(401, "bad token")
 
 
 class Ask(BaseModel):
@@ -54,7 +61,7 @@ def home():
 
 
 @app.post("/ask")
-def ask_endpoint(body: Ask):
+def ask_endpoint(body: Ask, _=Depends(auth)):
     history = memory.recent_history(10)
     messages = [{"role": r, "content": t} for r, t in history]
     messages.append({"role": "user", "content": body.message})
@@ -64,6 +71,12 @@ def ask_endpoint(body: Ask):
     return {"reply": reply}
 
 
+@app.get("/api/dashboard")
+def api_dashboard(_=Depends(auth)):
+    from integrations.personal import dashboard_data
+    return dashboard_data()
+
+
 @app.get("/status")
 def status():
     return {"name": NAME, "status": "online"}
@@ -71,5 +84,5 @@ def status():
 
 if __name__ == "__main__":
     import uvicorn
-    print(f"{NAME} server on http://0.0.0.0:{SERVER_PORT} — open that on your phone.")
-    uvicorn.run(app, host="0.0.0.0", port=SERVER_PORT)
+    print(f"{NAME} server on http://{SERVER_HOST}:{SERVER_PORT}")
+    uvicorn.run(app, host=SERVER_HOST, port=SERVER_PORT)

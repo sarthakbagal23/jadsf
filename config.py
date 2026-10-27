@@ -11,7 +11,7 @@ DATA_DIR.mkdir(exist_ok=True)
 
 # --- identity ---
 NAME = os.environ.get("JARVIS_NAME", "JARVIS")
-CITY = os.environ.get("JARVIS_CITY", "Cumming")
+CITY = os.environ.get("JARVIS_CITY", "Cumming")  # GA
 
 # --- brain: "auto" (Groq if key set, else Ollama), "groq", or "ollama" ---
 JARVIS_BRAIN = os.environ.get("JARVIS_BRAIN", "auto")
@@ -48,10 +48,17 @@ SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
 SPOTIFY_REFRESH_TOKEN = os.environ.get("SPOTIFY_REFRESH_TOKEN", "")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "")
+CANVAS_BASE_URL = os.environ.get("CANVAS_BASE_URL", "")   # e.g. https://forsyth.instructure.com
+CANVAS_TOKEN = os.environ.get("CANVAS_TOKEN", "")
+IC_BASE_URL = os.environ.get("IC_BASE_URL", "")           # Infinite Campus portal host
 GOOGLE_CREDENTIALS = BASE_DIR / "credentials.json"   # Google OAuth client file
 GOOGLE_TOKEN = BASE_DIR / "token.json"               # created on first Google sign-in
 
 # --- phone server ---
 SERVER_PORT = int(os.environ.get("JARVIS_PORT", "8765"))
+# 127.0.0.1 = this laptop only. The server now exposes your grades, so it is
+# NOT open to the network unless you set JARVIS_HOST=0.0.0.0 (and a JARVIS_TOKEN).
+SERVER_HOST = os.environ.get("JARVIS_HOST", "127.0.0.1")
+SERVER_TOKEN = os.environ.get("JARVIS_TOKEN", "")
 
 MEMORY_DB = DATA_DIR / "memory.db"

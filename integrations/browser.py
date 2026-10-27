@@ -20,17 +20,19 @@ def _page():
     if _STATE["page"] is not None:
         return _STATE["page"]
     from playwright.sync_api import sync_playwright
+    from config import DATA_DIR
     pw = sync_playwright().start()
-    browser = pw.chromium.launch(headless=False)
-    page = browser.new_page()
+    # persistent profile: logins (Canvas, Google...) survive between runs
+    browser = pw.chromium.launch_persistent_context(
+        str(DATA_DIR / "browser_profile"), headless=False)
+    page = browser.pages[0] if browser.pages else browser.new_page()
     _STATE.update(pw=pw, browser=browser, page=page)
     return page
 
 
 def browser_open(url):
     p = _page()
-    p.goto(url)
-    p.wait_for_timeout(1500)
+    p.goto(url, wait_until="domcontentloaded", timeout=20000)
     return f"Opened {url}. Title: {p.title()}"
 
 
