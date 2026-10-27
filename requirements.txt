@@ -1,0 +1,13 @@
+ollama
+requests
+psutil
+fastapi
+uvicorn
+python-dotenv
+discord.py
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
+pyautogui
+pillow
+playwright

@@ -1,0 +1,6 @@
+faster-whisper
+pvporcupine
+sounddevice
+pyttsx3
+pywin32
+numpy
