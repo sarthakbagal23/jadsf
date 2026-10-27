@@ -14,8 +14,8 @@ CORE = ["get_time", "remember_fact", "recall_fact", "take_note"]
 GROUPS = [
     (r"weather|rain|temperature|forecast|cold|hot outside|umbrella", ["get_weather"]),
     (r"\bopen\b|launch|battery|cpu|ram\b|system|laptop", ["open_app", "system_info", "start_workflow"]),
-    (r"grade|gpa|class|homework|assignment|due|canvas|infinite|campus|school|test|quiz|exam|"
-     r"material|syllabus|chem|csa|\blang|apush|history|physics|stat|precalc|calc|weekend|plan",
+    (r"grades?|gpa|\bclass(es)?\b|homework|assignments?|\bdue\b|canvas|infinite|campus|school|\btests?\b|quiz|exam|"
+     r"materials?|syllabus|chem|\bcsa\b|\blang\b|apush|history|physics|\bstats?\b|precalc|\bcalc\b|weekend|\bplan\b",
      ["get_grades", "upcoming_work", "class_check", "class_materials", "weekend_plan",
       "morning_briefing", "study_summary"]),
     (r"countdown|days (until|till|left)|how long until|\bsat\b|deadline|competition|deca|tsa",

@@ -37,6 +37,7 @@ async function send(){
   const m=inp.value.trim(); if(!m) return; inp.value='';
   add(m,'you');
   const r=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+(localStorage.tok||'')},body:JSON.stringify({message:m})});
+  if(r.status===401){const t=prompt('JARVIS access token:'); if(t){localStorage.tok=t; inp.value=m; log.lastChild.remove(); return send();} add('Not authorized.','jarvis'); return;}
   const j=await r.json(); add(j.reply,'jarvis');
 }
 inp.addEventListener('keydown',e=>{if(e.key==='Enter')send();});

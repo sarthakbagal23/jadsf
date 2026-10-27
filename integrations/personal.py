@@ -193,6 +193,18 @@ def _safe(fn, label):
         return f"{label} unavailable ({e})"
 
 
+_wx = {"t": 0.0, "v": ""}
+
+
+def _weather_cached():
+    """Widget refreshes every minute; weather only needs to refresh every 10."""
+    import time
+    import tools as T
+    if time.time() - _wx["t"] > 600 or not _wx["v"]:
+        _wx.update(t=time.time(), v=T.get_weather())
+    return _wx["v"]
+
+
 def dashboard_data():
     """Everything the widget/dashboard shows. Each part fails on its own."""
     import tools as T
@@ -200,7 +212,7 @@ def dashboard_data():
     by, total = study_totals(1)
     return {
         "time": dt.datetime.now().strftime("%a %b %d  %I:%M %p"),
-        "weather": _safe(T.get_weather, "weather"),
+        "weather": _safe(_weather_cached, "weather"),
         "countdowns": countdown_rows(),
         "study_today_min": round(total),
         "study_active": _study()["active"],

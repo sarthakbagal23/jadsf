@@ -61,23 +61,32 @@ def refresh_school():
 
 
 def main():
+    import time
     from integrations.personal import dashboard_data
     root, label = build()
+    state = {"busy": False}
+
+    def worker():
+        try:
+            text = render(dashboard_data())
+        except Exception as e:
+            text = f"JARVIS widget error:\n{e}"
+        root.after(0, lambda: label.config(text=text))   # UI update back on the Tk thread
+        state["busy"] = False
 
     def tick():
-        try:
-            label.config(text=render(dashboard_data()))
-        except Exception as e:
-            label.config(text=f"JARVIS widget error:\n{e}")
+        if not state["busy"]:               # network (weather) must never freeze the window
+            state["busy"] = True
+            threading.Thread(target=worker, daemon=True).start()
         root.after(60_000, tick)
 
-    def school_loop():
-        refresh_school()
-        threading.Timer(15 * 60, school_loop).start()
+    def school_loop():                      # daemon thread: closing the widget exits at once
+        while True:
+            refresh_school()
+            time.sleep(15 * 60)
 
     tick()
-    t = threading.Thread(target=school_loop, daemon=True)
-    t.start()
+    threading.Thread(target=school_loop, daemon=True).start()
     root.mainloop()
 
 

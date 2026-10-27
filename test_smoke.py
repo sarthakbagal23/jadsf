@@ -285,6 +285,57 @@ def t_server_auth():
 check("server: token auth blocks grades/dashboard without the token", t_server_auth)
 
 
+def t_canvas_mock():
+    import datetime as dt
+    import integrations.school as S
+
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            assert self.headers.get("Authorization") == "Bearer tok", "token not sent"
+            due = (dt.date.today() + dt.timedelta(days=2)).isoformat() + "T23:59:00Z"
+            path = self.path.split("?")[0]
+            data = {
+                "/api/v1/courses": [
+                    {"id": 1, "name": "AP Chemistry", "enrollments": [
+                        {"type": "student", "computed_current_score": 87.4, "computed_current_grade": "B"}]},
+                    {"id": 2, "name": "AP Statistics", "enrollments": [
+                        {"type": "student", "computed_current_score": 84.0, "computed_current_grade": "B"}]}],
+                "/api/v1/planner/items": [
+                    {"context_name": "AP Chemistry", "plannable_type": "assignment",
+                     "plannable": {"title": "Titration Lab", "due_at": due, "points_possible": 50},
+                     "submissions": {"submitted": False}},
+                    {"context_name": "AP Statistics", "plannable_type": "assignment",
+                     "plannable": {"title": "Done HW", "due_at": due},
+                     "submissions": {"submitted": True}}],
+                "/api/v1/announcements": [{"title": "Lab Friday", "message": "<p>Bring goggles</p>"}],
+            }.get(path, [])
+            body = json.dumps(data).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    srv = HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    S.CANVAS_BASE_URL, S.CANVAS_TOKEN = f"http://127.0.0.1:{srv.server_address[1]}", "tok"
+    try:
+        assert "87.4" in S.canvas_grades()[0]["score"].__str__()
+        out = S.upcoming_work(7)
+        assert "Titration Lab" in out and "Done HW" not in out, out    # submitted work is hidden
+        cc = S.class_check("chem")
+        assert "AP Chemistry" in cc and "Titration Lab" in cc and "Bring goggles" in cc, cc
+        assert "No class matches" in S.class_check("underwater basket weaving")
+    finally:
+        srv.shutdown()
+
+
+check("school: Canvas grades/due/class_check against a mock Canvas API", t_canvas_mock)
+
+
 print()
 failed = [r for r in results if r[1] == "FAIL"]
 print(f"{len(results) - len(failed)}/{len(results)} passed")
