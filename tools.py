@@ -101,7 +101,7 @@ def open_app(name):
 def system_info():
     b = psutil.sensors_battery()
     batt = f"{b.percent}% {'charging' if b.power_plugged else 'on battery'}" if b else "unknown"
-    return (f"CPU {psutil.cpu_percent(interval=1)}%, "
+    return (f"CPU {psutil.cpu_percent(interval=0.1)}%, "
             f"RAM {psutil.virtual_memory().percent}% used, battery {batt}.")
 
 

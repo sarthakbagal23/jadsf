@@ -8,7 +8,7 @@ through this loader.
 
 def get_integration_tools():
     tools = []
-    for name in ("notion", "spotify", "github", "google", "computer", "browser"):
+    for name in ("personal", "school", "notion", "spotify", "github", "google", "computer", "browser"):
         try:
             mod = __import__(f"integrations.{name}", fromlist=["TOOLS"])
             mod_tools = getattr(mod, "TOOLS", [])

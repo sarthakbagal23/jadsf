@@ -107,9 +107,11 @@ def t_openai_loop():
     port = srv.server_address[1]
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
+        import tools
         out = brain._openai_loop(f"http://127.0.0.1:{port}/v1", "dummy",
                                  "mock-model",
-                                 [{"role": "user", "content": "what time is it"}])
+                                 [{"role": "user", "content": "what time is it"}],
+                                 tools.TOOLS)
         assert "mocked" in out, out
         assert MockHandler.calls == 2, f"expected 2 model calls, got {MockHandler.calls}"
     finally:
@@ -127,7 +129,8 @@ def t_imports():
               "integrations.notion", "integrations.spotify",
               "integrations.spotify_auth", "integrations.github",
               "integrations.google", "integrations.discord_bot",
-              "integrations.computer", "integrations.browser"]:
+              "integrations.computer", "integrations.browser",
+              "persona", "router", "integrations.personal", "integrations.school", "widget"]:
         try:
             importlib.import_module(m)
         except RuntimeError:
@@ -136,7 +139,7 @@ def t_imports():
             # missing optional dep on this Linux box
             if any(k in str(e) for k in ("pyttsx3", "discord", "google",
                                          "playwright", "sounddevice",
-                                         "pvporcupine", "faster_whisper")):
+                                         "pvporcupine", "faster_whisper", "tkinter")):
                 pass
             else:
                 raise
@@ -156,6 +159,130 @@ def t_loader():
 
 
 check("plugin loader skips everything with no keys", t_loader)
+
+
+# --- 6. personalization: router, countdowns, study timer, school ---
+def _names():
+    import tools
+    return {t["schema"]["function"]["name"] for t in tools.TOOLS}
+
+
+def t_personal_loaded():
+    n = _names()
+    for need in ("countdowns", "study_start", "start_workflow", "morning_briefing",
+                 "weekend_plan", "get_grades", "class_check", "class_materials"):
+        assert need in n, f"{need} missing from {sorted(n)}"
+
+
+check("personal + school tools load with no keys", t_personal_loaded)
+
+
+def t_fast_path():
+    import tools
+    from router import fast_path
+    tm = {t["schema"]["function"]["name"]: t["function"] for t in tools.TOOLS}
+    assert "2026" in fast_path("what time is it?", tm)
+    assert "SAT" in fast_path("how many days until SAT", tm)
+    assert fast_path("explain recursion to me", tm) is None
+    assert fast_path("open the pod bay doors", tm) is None      # unknown app -> model, not `start junk`
+    assert fast_path("Jarvis, what's the date", tm) is not None  # wake-word prefix stripped
+    # the long, vague stuff must go to the model
+    assert fast_path("plan my weekend around my chem test and usaco", tm) is None
+
+
+check("router fast path: crisp commands instant, vague ones go to the model", t_fast_path)
+
+
+def t_select_tools():
+    import tools
+    from router import select_tools
+    full = len(tools.TOOLS)
+    pick = lambda q: {t["schema"]["function"]["name"] for t in select_tools(
+        [{"role": "user", "content": q}], tools.TOOLS)}
+    g = pick("what are my grades in chem and what's due")
+    assert "get_grades" in g and "class_check" in g and "browser_open" not in g
+    assert len(g) < full
+    assert "countdowns" in pick("anything else going on")         # fallback still useful
+    assert "get_time" in pick("zzz")                              # core always present
+
+
+check("router sends a small tool subset per request", t_select_tools)
+
+
+def t_countdown_and_study():
+    import tempfile
+    import integrations.personal as P
+    P.DATA_DIR = Path(tempfile.mkdtemp())
+    rows = P.countdown_rows()
+    assert rows and rows[0][0] == "SAT"
+    assert "Added" in P.add_countdown("DECA ICDC", "2027-04-25")
+    assert "YYYY-MM-DD" in P.add_countdown("bad", "tomorrow")
+    assert "Removed" in P.remove_countdown("deca icdc")
+    assert "Timer started" in P.study_start("USACO")
+    assert "Already timing" in P.study_start("again")
+    assert "Logged" in P.study_stop("test")
+    assert "USACO" in P.study_summary(7)
+    assert "No timer" in P.study_stop()
+
+
+check("countdowns + study timer persist and validate", t_countdown_and_study)
+
+
+def t_school():
+    import integrations.school as S
+    cs = [{"id": 1, "name": "AP Chemistry"}, {"id": 2, "name": "AP Computer Science A", "course_code": "APCSA"},
+          {"id": 3, "name": "AP English Language"}, {"id": 4, "name": "AP United States History"},
+          {"id": 5, "name": "AP Physics 1"}, {"id": 6, "name": "AP Statistics"}, {"id": 7, "name": "Precalculus"}]
+    f = lambda q: S.find_course(q, cs)["id"]
+    assert f("chem") == 1 and f("csa") == 2 and f("lang") == 3
+    assert f("physics") == 5 and f("stats") == 6 and f("precalc") == 7
+    assert "not set up" in S.grades().lower() or "Problems" in S.grades()   # no keys: clear message, no crash
+    ic = S._walk_ic({"students": [{"terms": [{"termName": "Q2", "courses": [
+        {"courseName": "AP Chemistry", "gradingTasks": [{"taskName": "Q2", "progressPercent": 87.4,
+                                                          "progressScore": "B"}]}]}]}]})
+    assert ic and ic[0]["score"] == 87.4 and ic[0]["course"] == "AP Chemistry"
+
+
+check("school: fuzzy class names, IC parsing, graceful when unconfigured", t_school)
+
+
+def t_brain_fast_and_dedupe():
+    import brain
+    called = []
+    orig = brain._openai_loop
+    brain._openai_loop = lambda *a, **k: called.append(1) or "model"
+    try:
+        out = brain.ask([{"role": "user", "content": "what time is it"}])
+        assert "2026" in out and not called, "fast path should not call the model"
+    finally:
+        brain._openai_loop = orig
+    n = {"c": 0}
+    def f(x=""):
+        n["c"] += 1
+        return "ok"
+    cache = {}
+    r = brain._run_calls([("f", {"x": "1"}), ("f", {"x": "1"})], {"f": f}, cache)
+    r2 = brain._run_calls([("f", {"x": "1"})], {"f": f}, cache)
+    assert n["c"] <= 2 and "do not repeat" in r2[0], (n, r2)
+    assert "no tool called" in brain._run_calls([("nope", {})], {}, {})[0]
+    assert "bad arguments" in brain._run_calls([("f", "oops")], {"f": f}, {})[0]
+
+
+check("brain: fast path skips the model; repeat/unknown/bad-arg calls handled", t_brain_fast_and_dedupe)
+
+
+def t_server_auth():
+    from fastapi.testclient import TestClient
+    import server
+    server.SERVER_TOKEN = "secret"
+    c = TestClient(server.app)
+    assert c.post("/ask", json={"message": "hi"}).status_code == 401
+    assert c.get("/api/dashboard").status_code == 401
+    d = c.get("/api/dashboard", headers={"Authorization": "Bearer secret"})
+    assert d.status_code == 200 and "countdowns" in d.json(), d.text[:200]
+
+
+check("server: token auth blocks grades/dashboard without the token", t_server_auth)
 
 
 print()

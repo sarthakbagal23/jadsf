@@ -144,6 +144,35 @@ Honest limit: vision coordinates are approximate — for anything precise
 on the web, the browser tools never miss. Try: `open Chrome and search
 for the Ballon d'Or winner`, then `click the first result`.
 
+## v4: Personalized for Sarthak
+
+**Speed/reliability.** Crisp commands ("what time is it", "open chrome", "check chem",
+"pause", "start coding mode") now skip the model entirely. Everything else only sends
+the model the few tools that matter (router.py) instead of ~45, with 30s timeouts,
+one quick retry on rate limits, parallel tool calls, and no repeated identical calls.
+
+**Persona.** `persona.py` holds who you are (school, classes, goals). Override anything
+in `data/profile.json`.
+
+**Tools** (`integrations/personal.py`, `integrations/school.py`):
+`countdowns` / `add_countdown`, `study_start` / `study_stop` / `study_summary`,
+`start_workflow` (coding, school, study, usaco, sat, deca - edit `data/workflows.json`),
+`morning_briefing`, `weekend_plan`, `get_grades`, `upcoming_work`, `class_check`,
+`class_materials`. All school tools are read-only.
+
+**School setup.** Canvas: set `CANVAS_BASE_URL` + `CANVAS_TOKEN`. Infinite Campus: set
+`IC_BASE_URL`, then once run `python -m integrations.school ic-login` and sign in yourself
+in the window that opens (the session is saved locally; no password is stored).
+The IC grades endpoint is read from the portal's JSON and has not been tested against
+Forsyth's live portal - if it errors, send me the message.
+
+**Desktop widget.** `start_widget.bat` (or `python widget.py`): an always-on-top card with
+the clock, weather, countdowns, study time, grades and what is due. Drag to move,
+right-click to close.
+
+**Security.** The server now listens on this laptop only. Set `JARVIS_HOST` and
+`JARVIS_TOKEN` together before exposing it, since it can show your grades.
+
 ## Next steps (when v1 feels good)
 
 - HUD dashboard in the browser (your Vite stack)

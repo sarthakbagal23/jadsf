@@ -3,3 +3,7 @@
 __pycache__/
 **/__pycache__/
 data/*.db
+data/
+*.json.bak
+token.json
+credentials.json
