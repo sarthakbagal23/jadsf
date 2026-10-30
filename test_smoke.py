@@ -6,6 +6,7 @@ imports. Windows-only parts (pyautogui, mic, Playwright browser) can only
 be syntax-checked on Linux — run this file on your laptop to check those.
 """
 import json
+import shutil
 import sys
 import threading
 import tempfile
@@ -178,7 +179,8 @@ def _names():
 def t_personal_loaded():
     n = _names()
     for need in ("countdowns", "study_start", "start_workflow", "morning_briefing",
-                 "weekend_plan", "get_grades", "class_check", "class_materials"):
+                 "weekend_plan", "get_grades", "class_check", "class_materials",
+                 "support_time_status", "support_time_action"):
         assert need in n, f"{need} missing from {sorted(n)}"
 
 
@@ -212,6 +214,8 @@ def t_select_tools():
     assert len(g) < full
     assert "countdowns" in pick("anything else going on")         # fallback still useful
     assert "get_time" in pick("zzz")                              # core always present
+    action = pick("sign me up for the chemistry help session at Student Support Time on Oct 30")
+    assert "support_time_action" in action and "support_time_status" in action, action
 
 
 check("router sends a small tool subset per request", t_select_tools)
@@ -340,7 +344,8 @@ def t_canvas_mock():
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     S.CANVAS_BASE_URL, S.CANVAS_TOKEN = f"http://127.0.0.1:{srv.server_address[1]}", "tok"
     S.EDITH_CHROME_CDP_URL = ""
-    S.SCHOOL_PROFILE = SMOKE_DATA / "edith-smoke-school-profile"
+    test_profile = Path(tempfile.mkdtemp(prefix="edith-smoke-school-", dir=SMOKE_DATA))
+    S.SCHOOL_PROFILE = test_profile
     try:
         assert "87.4" in S.canvas_grades()[0]["score"].__str__()
         out = S.upcoming_work(7)
@@ -351,6 +356,7 @@ def t_canvas_mock():
     finally:
         srv.shutdown()
         S.CANVAS_BASE_URL, S.CANVAS_TOKEN, S.SCHOOL_PROFILE, S.EDITH_CHROME_CDP_URL = original
+        shutil.rmtree(test_profile, ignore_errors=True)
 
 
 check("school: Canvas grades/due/class_check against a mock Canvas API", t_canvas_mock)

@@ -64,6 +64,10 @@ Rules:
   scale is available; report the grade without guessing.
 - For Student Support Time availability and check-in details, use the live portal
   and never infer dates, times, or seat counts.
+- For a clear Student Support Time signup or check-in request, require the user to
+  name the session and date when needed; use support_time_action only for that
+  exact target. Report closed sessions or missing controls without clicking
+  around or claiming the action succeeded.
 - Call as few tools as possible, and do not repeat a call that already worked.
 - If a tool returns an error, tell him the real error in one line instead of retrying blindly.
 - For grades or class work he names a class ("check chem"): use that class only.

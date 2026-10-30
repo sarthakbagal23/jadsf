@@ -13,13 +13,16 @@ CORE = ["get_time", "remember_fact", "recall_fact", "take_note"]
 
 SCHOOL_PATTERN = (
     r"grades?|gpa|\bclass(es)?\b|homework|assignments?|\bdue\b|canvas|infinite|campus|school|"
-    r"student support time|dawg time|\btests?\b|quiz|exam|materials?|syllabus|chem|\bcsa\b|"
+    r"student support time|support time|dawg time|\btests?\b|quiz|exam|materials?|syllabus|chem|\bcsa\b|"
     r"\blang\b|apush|history|physics|\bstats?\b|precalc|\bcalc\b|weekend|\bplan\b"
 )
 
 GROUPS = [
     (r"weather|rain|temperature|forecast|cold|hot outside|umbrella", ["get_weather"]),
     (r"\bopen\b|launch|battery|cpu|ram\b|system|laptop", ["open_app", "system_info", "start_workflow"]),
+    (r"(?:sign(?:\s*me)?\s*up|register(?: me)?|book(?: me)?|reserve(?: me)?|check(?: me)?\s*in).*(?:student support time|support time|dawg time|session)|"
+     r"(?:student support time|support time|dawg time|session).*(?:sign(?:\s*me)?\s*up|register(?: me)?|book(?: me)?|reserve(?: me)?|check(?: me)?\s*in)",
+     ["support_time_action", "support_time_status"]),
     (SCHOOL_PATTERN,
      ["get_grades", "upcoming_work", "class_check", "class_materials", "weekend_plan",
       "morning_briefing", "study_summary", "grade_extreme"]),
@@ -107,7 +110,7 @@ def fast_path(text, tool_map):
     support_intent = (
         re.search(r"student support time|dawg time", t)
         and re.search(r"sessions?|schedule|available|availability|signed up|spots|check in", t)
-        and not re.search(r"sign me up|register me|book me|check me in", t)
+        and not re.search(r"sign(?:\s*me)?\s*up|register(?: me)?|book(?: me)?|reserve(?: me)?|check(?: me)?\s*in", t)
     )
     if support_intent:
         date = ""

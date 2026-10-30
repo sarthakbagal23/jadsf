@@ -161,8 +161,7 @@ in `data/profile.json`.
 `countdowns` / `add_countdown`, `study_start` / `study_stop` / `study_summary`,
 `start_workflow` (coding, school, study, usaco, sat, deca - edit `data/workflows.json`),
 `morning_briefing`, `weekend_plan`, `get_grades`, `upcoming_work`, `class_check`,
-`class_materials`, `grade_extreme`, `open_school_portal`, `support_time_status`. Portal pages open in the dedicated EDITH Chrome
-profile; grades and assignment reads are read-only. School questions and their tool results use local Ollama, even when general chat uses Groq; school data stays local if Ollama is unavailable.
+`class_materials`, `grade_extreme`, `open_school_portal`, `support_time_status`, and `support_time_action` for a specifically requested signup/check-in. Portal pages open in the EDITH Chrome profile; grades and assignment reads are read-only. Signup/check-in only proceeds when the exact session is open and has one matching visible action control; closed or ambiguous sessions are left unchanged. School questions and their tool results use local Ollama, even when general chat uses Groq; school data stays local if Ollama is unavailable.
 
 **School setup.** Canvas and Infinite Campus both start at ClassLink. Set `CLASSLINK_URL`, `CANVAS_BASE_URL`, `IC_BASE_URL`, and `STUDENT_SUPPORT_TIME_URL` in `.env`. Run `start_edith_browser.bat` to open EDITH's dedicated Chrome profile, then sign into ClassLink and open Canvas and Infinite Campus from the dashboard. Open the Student Support Time tile once to establish its ClassLink session. Sign-in stays in `data/edith_chrome_profile` on this laptop. EDITH does not use your personal Chrome profile or copy its passwords/cookies.
 

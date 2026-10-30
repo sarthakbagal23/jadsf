@@ -500,6 +500,95 @@ def support_time_status(date=""):
     return "\n".join(output)
 
 
+def support_time_action(action, session, date=""):
+    """Use an explicitly requested, visible Student Support Time action only.
+
+    Locked sessions, ambiguous matches, and portals without a matching action
+    control are reported without clicking. The portal remains authoritative.
+    """
+    action = str(action or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if action not in ("sign_up", "check_in"):
+        return "Choose sign_up or check_in. No portal action was taken."
+    if not isinstance(session, str) or not session.strip() or len(session) > 160:
+        return "Provide the specific session name. No portal action was taken."
+
+    from integrations.browser import _STATE, _page
+    page = _page()
+    context = _STATE["context"]
+    pages = [p for p in context.pages if "forsyth.studentsupporttime.com" in p.url]
+    if not pages:
+        opened = open_school_portal("Student Support Time")
+        page = _STATE["page"]
+        if not page:
+            return opened
+    else:
+        page = pages[-1]
+        _STATE["page"] = page
+        page.bring_to_front()
+
+    try:
+        page.wait_for_function("document.body && document.body.innerText.includes('Dawg Time')", timeout=15000)
+        page.locator("li.list-group-item.clearfix.hover").first.wait_for(state="attached", timeout=10000)
+    except Exception:
+        return "Student Support Time is not ready or signed in. No portal action was taken."
+
+    if date:
+        query = re.sub(r"\s+", " ", str(date).strip().lower())
+        try:
+            parsed = dt.date.fromisoformat(query)
+            query = f"{parsed.strftime('%b').lower()} {parsed.day}"
+        except ValueError:
+            pass
+        matches = [link for link in page.locator("a.btn-wide").all()
+                   if link.is_visible() and query in (link.text_content() or "").lower()]
+        if len(matches) != 1:
+            return f"I found {len(matches)} calendar matches for '{date}'. No portal action was taken."
+        matches[0].click(timeout=5000)
+        page.wait_for_timeout(700)
+
+    selector = "li.list-group-item.clearfix.hover" if action == "sign_up" else "li.openSession"
+    query = " ".join(session.casefold().split())
+    candidates = []
+    for card in page.locator(selector).all():
+        if card.is_visible() and query in " ".join(card.inner_text().casefold().split()):
+            candidates.append(card)
+    if len(candidates) != 1:
+        return f"I found {len(candidates)} matching sessions for '{session}'. No portal action was taken."
+
+    card = candidates[0]
+    if action == "sign_up":
+        closed = any("closed" in (el.get_attribute("title") or "").lower()
+                     for el in card.locator("[title]").all())
+        if closed:
+            return f"'{session}' is closed in the portal. No signup was made."
+
+    action_pattern = re.compile(r"\b(sign\s*up|register|reserve|join)\b", re.I) if action == "sign_up" else re.compile(r"\bcheck[\s-]?in\b", re.I)
+    controls = []
+    for element in card.locator("button, a, [role=button], input[type=submit]").all():
+        if not element.is_visible() or element.is_disabled():
+            continue
+        label = " ".join((element.inner_text(timeout=1000)
+                          or element.get_attribute("aria-label")
+                          or element.get_attribute("title")
+                          or element.get_attribute("value") or "").split())
+        if action_pattern.search(label):
+            controls.append(element)
+    if len(controls) != 1:
+        return f"No unique visible {action.replace('_', ' ')} control is available for '{session}'. No portal action was taken."
+
+    controls[0].click(timeout=5000)
+    page.wait_for_timeout(700)
+    state_text = " ".join(card.inner_text().casefold().split())
+    if action == "sign_up" and any(x in state_text for x in ("signed up", "you are registered", "registration complete")):
+        return f"Signed up for '{session}'. The portal shows the new signup."
+    if action == "check_in" and any(x in state_text for x in ("checked in", "check-in complete", "you are checked in")):
+        return f"Checked in for '{session}'. The portal shows the new check-in."
+    dialog = page.locator("[role=dialog]:visible, .modal.in:visible")
+    if dialog.count():
+        return "The portal opened a confirmation step. Review it in Chrome; EDITH did not submit it."
+    return f"EDITH clicked the visible {action.replace('_', ' ')} control for '{session}', but the portal did not confirm the change. Check the page before retrying."
+
+
 TOOLS = [
     tool("get_grades", "Current grades (Infinite Campus + Canvas). Optionally one class, e.g. 'chem'.",
          {"course": {"type": "string"}}, [], grades),
@@ -519,6 +608,11 @@ TOOLS = [
     tool("support_time_status", "Read the selected Student Support Time date, session availability, and existing sign-ups. This does not change sign-ups.",
          {"date": {"type": "string", "description": "Optional visible date, for example Oct 30 or 2026-10-30"}},
          [], support_time_status),
+    tool("support_time_action", "Perform a specifically requested Student Support Time signup or check-in only when the exact session has one unique visible enabled action. Closed, ambiguous, or unconfirmed actions are not treated as complete.",
+         {"action": {"type": "string", "enum": ["sign_up", "check_in"]},
+          "session": {"type": "string", "description": "Specific visible session name"},
+          "date": {"type": "string", "description": "Optional date, such as Oct 30 or 2026-10-30"}},
+         ["action", "session"], support_time_action),
 ]
 
 if __name__ == "__main__":
