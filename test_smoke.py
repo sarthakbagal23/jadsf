@@ -8,12 +8,15 @@ be syntax-checked on Linux — run this file on your laptop to check those.
 import json
 import sys
 import threading
+import tempfile
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 results = []
+SMOKE_DATA = Path(__file__).resolve().parent / "data"
+SMOKE_DATA.mkdir(exist_ok=True)
 
 
 def check(name, fn):
@@ -29,18 +32,21 @@ def check(name, fn):
 # --- 1. memory round-trip (temp DB, not the real one) ---
 def t_memory():
     import memory
-    memory.MEMORY_DB = Path("/tmp/edith_test.db")
-    if memory.MEMORY_DB.exists():
-        memory.MEMORY_DB.unlink()
-    assert "December 5" in memory.remember("sat date", "December 5")
-    assert memory.recall("sat date") == "December 5"
-    assert memory.recall("nope") is None
-    memory.add_note("test note")
-    memory.log("user", "hello")
-    memory.log("assistant", "hi")
-    hist = memory.recent_history(10)
-    assert hist == [("user", "hello"), ("assistant", "hi")], hist
-    assert len(memory.list_facts()) == 1
+    original_db = memory.MEMORY_DB
+    try:
+        with tempfile.TemporaryDirectory(prefix="edith-smoke-memory-", dir=SMOKE_DATA) as temp:
+            memory.MEMORY_DB = Path(temp) / "memory.db"
+            assert "December 5" in memory.remember("sat date", "December 5")
+            assert memory.recall("sat date") == "December 5"
+            assert memory.recall("nope") is None
+            memory.add_note("test note")
+            memory.log("user", "hello")
+            memory.log("assistant", "hi")
+            hist = memory.recent_history(10)
+            assert hist[-2:] == [("user", "hello"), ("assistant", "hi")], hist
+            assert len(memory.list_facts()) == 1
+    finally:
+        memory.MEMORY_DB = original_db
 
 
 check("memory remember/recall/notes/history", t_memory)
@@ -151,11 +157,13 @@ check("all modules import (or skip cleanly with no keys)", t_imports)
 # --- 5. integration loader: no keys -> core tools only, no crash ---
 def t_loader():
     import tools
+    import config
     names = [t["schema"]["function"]["name"] for t in tools.TOOLS]
     assert "get_time" in names and "web_search" in names, names
     assert "search_notion" not in names, "notion loaded without a key!"
     assert "spotify_play" not in names, "spotify loaded without keys!"
-    assert "see_screen" not in names, "computer use loaded while off!"
+    assert ("see_screen" in names) == config.JARVIS_COMPUTER_USE, (
+        "computer tools should match the configured computer-use flag")
 
 
 check("plugin loader skips everything with no keys", t_loader)
@@ -210,19 +218,23 @@ check("router sends a small tool subset per request", t_select_tools)
 
 
 def t_countdown_and_study():
-    import tempfile
     import integrations.personal as P
-    P.DATA_DIR = Path(tempfile.mkdtemp())
-    rows = P.countdown_rows()
-    assert rows and rows[0][0] == "SAT"
-    assert "Added" in P.add_countdown("DECA ICDC", "2027-04-25")
-    assert "YYYY-MM-DD" in P.add_countdown("bad", "tomorrow")
-    assert "Removed" in P.remove_countdown("deca icdc")
-    assert "Timer started" in P.study_start("USACO")
-    assert "Already timing" in P.study_start("again")
-    assert "Logged" in P.study_stop("test")
-    assert "USACO" in P.study_summary(7)
-    assert "No timer" in P.study_stop()
+    original_dir = P.DATA_DIR
+    try:
+        with tempfile.TemporaryDirectory(prefix="edith-smoke-personal-", dir=SMOKE_DATA) as temp:
+            P.DATA_DIR = Path(temp)
+            rows = P.countdown_rows()
+            assert rows and rows[0][0] == "SAT"
+            assert "Added" in P.add_countdown("DECA ICDC", "2027-04-25")
+            assert "YYYY-MM-DD" in P.add_countdown("bad", "tomorrow")
+            assert "Removed" in P.remove_countdown("deca icdc")
+            assert "Timer started" in P.study_start("USACO")
+            assert "Already timing" in P.study_start("again")
+            assert "Logged" in P.study_stop("test")
+            assert "USACO" in P.study_summary(7)
+            assert "No timer" in P.study_stop()
+    finally:
+        P.DATA_DIR = original_dir
 
 
 check("countdowns + study timer persist and validate", t_countdown_and_study)
@@ -230,6 +242,9 @@ check("countdowns + study timer persist and validate", t_countdown_and_study)
 
 def t_school():
     import integrations.school as S
+    original = (S.CANVAS_BASE_URL, S.CANVAS_TOKEN, S.IC_BASE_URL, S.EDITH_CHROME_CDP_URL)
+    # Keep this configuration/parser check offline even when local credentials exist.
+    S.CANVAS_BASE_URL = S.CANVAS_TOKEN = S.IC_BASE_URL = S.EDITH_CHROME_CDP_URL = ""
     cs = [{"id": 1, "name": "AP Chemistry"}, {"id": 2, "name": "AP Computer Science A", "course_code": "APCSA"},
           {"id": 3, "name": "AP English Language"}, {"id": 4, "name": "AP United States History"},
           {"id": 5, "name": "AP Physics 1"}, {"id": 6, "name": "AP Statistics"}, {"id": 7, "name": "Precalculus"}]
@@ -241,6 +256,7 @@ def t_school():
         {"courseName": "AP Chemistry", "gradingTasks": [{"taskName": "Q2", "progressPercent": 87.4,
                                                           "progressScore": "B"}]}]}]}]})
     assert ic and ic[0]["score"] == 87.4 and ic[0]["course"] == "AP Chemistry"
+    S.CANVAS_BASE_URL, S.CANVAS_TOKEN, S.IC_BASE_URL, S.EDITH_CHROME_CDP_URL = original
 
 
 check("school: fuzzy class names, IC parsing, graceful when unconfigured", t_school)
@@ -288,6 +304,7 @@ check("server: token auth blocks grades/dashboard without the token", t_server_a
 def t_canvas_mock():
     import datetime as dt
     import integrations.school as S
+    original = (S.CANVAS_BASE_URL, S.CANVAS_TOKEN, S.SCHOOL_PROFILE, S.EDITH_CHROME_CDP_URL)
 
     class H(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -322,6 +339,8 @@ def t_canvas_mock():
     srv = HTTPServer(("127.0.0.1", 0), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     S.CANVAS_BASE_URL, S.CANVAS_TOKEN = f"http://127.0.0.1:{srv.server_address[1]}", "tok"
+    S.EDITH_CHROME_CDP_URL = ""
+    S.SCHOOL_PROFILE = SMOKE_DATA / "edith-smoke-school-profile"
     try:
         assert "87.4" in S.canvas_grades()[0]["score"].__str__()
         out = S.upcoming_work(7)
@@ -331,6 +350,7 @@ def t_canvas_mock():
         assert "No class matches" in S.class_check("underwater basket weaving")
     finally:
         srv.shutdown()
+        S.CANVAS_BASE_URL, S.CANVAS_TOKEN, S.SCHOOL_PROFILE, S.EDITH_CHROME_CDP_URL = original
 
 
 check("school: Canvas grades/due/class_check against a mock Canvas API", t_canvas_mock)

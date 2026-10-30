@@ -2,6 +2,7 @@
 import sqlite3
 import time
 from collections import deque
+from contextlib import contextmanager
 
 from config import MEMORY_DB
 
@@ -9,13 +10,21 @@ from config import MEMORY_DB
 _session_history = deque(maxlen=40)
 
 
+@contextmanager
 def _conn():
     conn = sqlite3.connect(MEMORY_DB)
-    conn.execute("CREATE TABLE IF NOT EXISTS facts (key TEXT PRIMARY KEY, value TEXT)")
-    conn.execute("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT, created REAL)")
-    # Remove legacy transcripts: ordinary conversation is no longer durable memory.
-    conn.execute("DROP TABLE IF EXISTS history")
-    return conn
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS facts (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT, created REAL)")
+        # Remove legacy transcripts: ordinary conversation is no longer durable memory.
+        conn.execute("DROP TABLE IF EXISTS history")
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def remember(key, value):
