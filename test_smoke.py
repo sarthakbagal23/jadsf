@@ -1,4 +1,4 @@
-"""Smoke tests for the JARVIS scaffold. Run:  python test_smoke.py
+"""Smoke tests for the EDITH scaffold. Run:  python test_smoke.py
 
 Tests what can be verified without keys or Windows: memory, live web
 tools, the Groq/OpenAI tool loop (against a mock server), and module
@@ -29,7 +29,7 @@ def check(name, fn):
 # --- 1. memory round-trip (temp DB, not the real one) ---
 def t_memory():
     import memory
-    memory.MEMORY_DB = Path("/tmp/jarvis_test.db")
+    memory.MEMORY_DB = Path("/tmp/edith_test.db")
     if memory.MEMORY_DB.exists():
         memory.MEMORY_DB.unlink()
     assert "December 5" in memory.remember("sat date", "December 5")
@@ -125,7 +125,7 @@ check("Groq/OpenAI tool loop (mock server, get_time dispatch)", t_openai_loop)
 def t_imports():
     import importlib
     for m in ["config", "memory", "tools", "brain", "voice", "server",
-              "jarvis", "integrations", "integrations._common",
+              "edith", "integrations", "integrations._common",
               "integrations.notion", "integrations.spotify",
               "integrations.spotify_auth", "integrations.github",
               "integrations.google", "integrations.discord_bot",
@@ -185,7 +185,7 @@ def t_fast_path():
     assert "SAT" in fast_path("how many days until SAT", tm)
     assert fast_path("explain recursion to me", tm) is None
     assert fast_path("open the pod bay doors", tm) is None      # unknown app -> model, not `start junk`
-    assert fast_path("Jarvis, what's the date", tm) is not None  # wake-word prefix stripped
+    assert fast_path("EDITH, what's the date", tm) is not None  # wake-word prefix stripped
     # the long, vague stuff must go to the model
     assert fast_path("plan my weekend around my chem test and usaco", tm) is None
 

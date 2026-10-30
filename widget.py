@@ -2,7 +2,7 @@
 
 Run:  python widget.py        (or double-click start_widget.bat)
 Drag to move, right-click to close. Refreshes every minute; school data
-comes from the cache JARVIS keeps (so it never blocks), and a background
+comes from the cache EDITH keeps (so it never blocks), and a background
 thread refreshes grades/assignments every 15 minutes.
 """
 import threading
@@ -13,14 +13,14 @@ BG, FG, DIM, ACC = "#0b1220", "#e2e8f0", "#64748b", "#38bdf8"
 
 def build():
     root = tk.Tk()
-    root.title("JARVIS")
+    root.title("EDITH")
     root.overrideredirect(True)
     root.attributes("-topmost", True)
     root.attributes("-alpha", 0.93)
     root.configure(bg=BG, padx=14, pady=10)
     root.geometry("+40+40")
     label = tk.Label(root, bg=BG, fg=FG, justify="left", anchor="nw",
-                     font=("Consolas", 10), text="JARVIS starting...")
+                     font=("Consolas", 10), text="EDITH starting...")
     label.pack()
 
     drag = {}
@@ -32,7 +32,7 @@ def build():
 
 
 def render(d):
-    lines = [f"JARVIS   {d['time']}", d["weather"], ""]
+    lines = [f"EDITH   {d['time']}", d["weather"], ""]
     for name, days in d["countdowns"][:3]:
         lines.append(f"{name:<10} {days:>3} days")
     mins = d["study_today_min"]
@@ -70,7 +70,7 @@ def main():
         try:
             text = render(dashboard_data())
         except Exception as e:
-            text = f"JARVIS widget error:\n{e}"
+            text = f"EDITH widget error:\n{e}"
         root.after(0, lambda: label.config(text=text))   # UI update back on the Tk thread
         state["busy"] = False
 

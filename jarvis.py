@@ -1,8 +1,8 @@
-"""JARVIS — entry point.
+"""Legacy entry point retained for compatibility. Use edith.py for EDITH.
 
-Text mode (default):      python jarvis.py           (type + spoken replies)
-Talk mode (push-to-talk): python jarvis.py --talk     (press Enter to speak)
-Voice mode (wake word):   python jarvis.py --voice    (say "Jarvis" hands-free)
+Text mode (default):      python edith.py           (type + spoken replies)
+Talk mode (push-to-talk): python edith.py --talk     (press Enter to speak)
+Voice mode (wake word):   python edith.py --voice    (say "EDITH" hands-free)
 """
 import argparse
 
@@ -11,25 +11,28 @@ from brain import ask
 
 
 def _speak_safe(text):
-    """Speak out loud. Fails silently if pyttsx3 isn't installed."""
+    """Speak out loud using ElevenLabs if available, falling back to local TTS."""
     try:
-        import pyttsx3
-        engine = pyttsx3.init()
-        engine.setProperty("rate", 185)
-        voices = engine.getProperty("voices")
-        # Pick a male voice if available (more JARVIS-like)
-        for v in voices:
-            if "david" in v.name.lower() or "male" in v.name.lower():
-                engine.setProperty("voice", v.id)
-                break
-        engine.say(text)
-        engine.runAndWait()
+        from voice import speak
+        speak(text)
     except Exception:
-        pass  # no voice deps — just print
+        try:
+            import pyttsx3
+            engine = pyttsx3.init()
+            engine.setProperty("rate", 185)
+            voices = engine.getProperty("voices")
+            for v in voices:
+                if "david" in v.name.lower() or "male" in v.name.lower():
+                    engine.setProperty("voice", v.id)
+                    break
+            engine.say(text)
+            engine.runAndWait()
+        except Exception:
+            pass
 
 
 def text_loop():
-    print("JARVIS online. Type 'quit' to exit.\n")
+    print("EDITH online. Type 'quit' to exit.\n")
     while True:
         try:
             user = input("you: ").strip()
@@ -49,15 +52,15 @@ def text_loop():
         reply = ask(messages)
         memory.log("user", user)
         memory.log("assistant", reply)
-        print(f"JARVIS: {reply}\n")
+        print(f"EDITH: {reply}\n")
         _speak_safe(reply)
 
 
 def talk_loop():
-    """Push-to-talk: press Enter → speak → JARVIS listens, thinks, speaks back."""
+    """Push-to-talk: press Enter → speak → EDITH listens, thinks, speaks back."""
     from voice import listen_once, speak
-    print("JARVIS online (talk mode). Press Enter to speak, 'quit' to exit.\n")
-    speak("JARVIS online, sir. Press Enter when you want to talk.")
+    print("EDITH online (talk mode). Press Enter to speak, 'quit' to exit.\n")
+    speak("EDITH online, sir. Press Enter when you want to talk.")
     while True:
         try:
             cmd = input("[press Enter to talk] ").strip()
@@ -79,12 +82,12 @@ def talk_loop():
         reply = ask(messages)
         memory.log("user", text)
         memory.log("assistant", reply)
-        print(f"JARVIS: {reply}\n")
+        print(f"EDITH: {reply}\n")
         speak(reply)
 
 
 def main():
-    ap = argparse.ArgumentParser(description="JARVIS — your own AI assistant")
+    ap = argparse.ArgumentParser(description="EDITH — your own AI assistant")
     ap.add_argument("--voice", action="store_true",
                     help="full voice loop (wake word + mic + speech)")
     ap.add_argument("--talk", action="store_true",

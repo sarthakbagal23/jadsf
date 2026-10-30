@@ -64,7 +64,7 @@ class CallbackHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(b"<h1>Spotify Connected to JARVIS!</h1><p>You can close this window now.</p>")
+            self.wfile.write(b"<h1>Spotify Connected to EDITH!</h1><p>You can close this window now.</p>")
         else:
             self.send_response(404)
             self.end_headers()
@@ -96,7 +96,7 @@ def main():
         server.handle_request()
         if CallbackHandler.code:
             token = exchange_code(CallbackHandler.code)
-            print("\nSUCCESS! Spotify is now connected to JARVIS.")
+            print("\nSUCCESS! Spotify is now connected to EDITH.")
             print(f"SPOTIFY_REFRESH_TOKEN={token}")
             return
     except Exception as e:
@@ -108,7 +108,7 @@ def main():
     code = urllib.parse.parse_qs(urllib.parse.urlparse(redirected).query).get("code", [None])[0]
     if code:
         token = exchange_code(code)
-        print("\nSUCCESS! Spotify is now connected to JARVIS.")
+        print("\nSUCCESS! Spotify is now connected to EDITH.")
         print(f"SPOTIFY_REFRESH_TOKEN={token}")
     else:
         print("No authorization code found in URL.")

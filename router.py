@@ -11,13 +11,22 @@ import re
 
 CORE = ["get_time", "remember_fact", "recall_fact", "take_note"]
 
+SCHOOL_PATTERN = (
+    r"grades?|gpa|\bclass(es)?\b|homework|assignments?|\bdue\b|canvas|infinite|campus|school|"
+    r"student support time|dawg time|\btests?\b|quiz|exam|materials?|syllabus|chem|\bcsa\b|"
+    r"\blang\b|apush|history|physics|\bstats?\b|precalc|\bcalc\b|weekend|\bplan\b"
+)
+
 GROUPS = [
     (r"weather|rain|temperature|forecast|cold|hot outside|umbrella", ["get_weather"]),
     (r"\bopen\b|launch|battery|cpu|ram\b|system|laptop", ["open_app", "system_info", "start_workflow"]),
-    (r"grades?|gpa|\bclass(es)?\b|homework|assignments?|\bdue\b|canvas|infinite|campus|school|\btests?\b|quiz|exam|"
-     r"materials?|syllabus|chem|\bcsa\b|\blang\b|apush|history|physics|\bstats?\b|precalc|\bcalc\b|weekend|\bplan\b",
+    (SCHOOL_PATTERN,
      ["get_grades", "upcoming_work", "class_check", "class_materials", "weekend_plan",
-      "morning_briefing", "study_summary"]),
+      "morning_briefing", "study_summary", "grade_extreme"]),
+    (r"student support time|dawg time", ["open_school_portal", "browser_text", "support_time_status"]),
+    (r"\b(open|launch|show|click|read|inspect|look at)\b.*\b(canvas|infinite campus|classlink|school portal|student support time|dawg time|current tab|active tab)\b|"
+     r"\b(canvas|infinite campus|classlink|school portal|student support time|dawg time|current tab|active tab)\b.*\b(open|launch|show|click|read|inspect|look at)\b",
+     ["open_school_portal", "browser_open", "browser_text", "browser_click", "browser_screenshot"]),
     (r"countdown|days (until|till|left)|how long until|\bsat\b|deadline|competition|deca|tsa",
      ["countdowns", "add_countdown", "remove_countdown"]),
     (r"study|focus|timer|pomodoro|usaco|session", ["study_start", "study_stop", "study_summary"]),
@@ -41,6 +50,12 @@ GROUPS = [
     (r"search|look up|google|who |what is|latest|news|price|score", ["web_search"]),
 ]
 FALLBACK = ["web_search", "countdowns"]
+
+
+def is_school_request(messages):
+    """Whether recent user turns involve school data or school services."""
+    users = [m["content"] for m in messages if m.get("role") == "user"][-2:]
+    return bool(re.search(SCHOOL_PATTERN, " ".join(users), re.I))
 
 
 def select_tools(messages, all_tools):
@@ -68,8 +83,16 @@ def _course_words():
 def fast_path(text, tool_map):
     """Run a tool directly for crisp commands. Returns reply text, or None."""
     t = re.sub(r"[?!.,]", "", text.lower()).strip()
-    t = re.sub(r"^(hey |ok |okay )?(jarvis|please)\s*,?\s*", "", t).strip()
-    if not t or len(t.split()) > 9:
+    t = re.sub(r"^(hey |ok |okay )?(edith|please)\s*,?\s*", "", t).strip()
+    if re.search(r"\b(lowest|worst|highest|best)\b", t) and re.search(r"\b(grades?|class|course)\b", t):
+        direction = "highest" if re.search(r"\b(highest|best)\b", t) else "lowest"
+        fn = tool_map.get("grade_extreme")
+        if fn is not None:
+            try:
+                return str(fn(direction=direction))
+            except Exception as e:
+                return f"grade_extreme failed: {e}"
+    if not t:
         return None
 
     def run(name, **kw):
@@ -80,6 +103,47 @@ def fast_path(text, tool_map):
             return str(fn(**kw))
         except Exception as e:
             return f"{name} failed: {e}"
+
+    support_intent = (
+        re.search(r"student support time|dawg time", t)
+        and re.search(r"sessions?|schedule|available|availability|signed up|spots|check in", t)
+        and not re.search(r"sign me up|register me|book me|check me in", t)
+    )
+    if support_intent:
+        date = ""
+        if "today" in t or "tomorrow" in t:
+            from datetime import date as current_date, timedelta
+            target = current_date.today() + timedelta(days=1 if "tomorrow" in t else 0)
+            date = f"{target.strftime('%b')} {target.day}"
+        else:
+            m = re.search(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{1,2}\b", t)
+            if m:
+                date = m.group(0)
+        return run("support_time_status", date=date)
+
+    tokens = set(re.findall(r"[a-z0-9-]+", t))
+    course_terms = _course_words() - {"ap", "class"}
+    matched = sorted((word for word in course_terms if word in tokens), key=len, reverse=True)
+    course = matched[0] if matched else ""
+    explicit_grade_lookup = (
+        re.search(r"\b(check|look up|find)\b.*\bgrade\b", t)
+        or re.search(r"\bwhat(?:'s| is| was)\b.*\bgrade\b", t)
+        or re.search(r"\bgrade\b.*\b(in|for)\b", t)
+    )
+    if course and explicit_grade_lookup and not re.search(r"\b(if|would|estimate|calculate)\b", t):
+        return run("get_grades", course=course)
+
+    if (re.search(r"\b(due|homework|assignments?|upcoming work)\b", t)
+            and not re.search(r"\bgrades?\b", t)):
+        days_match = re.search(r"next\s+(\d+)\s+days?", t)
+        days = int(days_match.group(1)) if days_match else (
+            14 if "two weeks" in t or "2 weeks" in t else
+            2 if "tomorrow" in t else 1 if "today" in t else 7)
+        if len(t.split()) <= 9 or course or days_match:
+            return run("upcoming_work", days=days, course=course)
+
+    if len(t.split()) > 9:
+        return None
 
     if re.fullmatch(r"(what('s| is) )?(the )?(current )?(time|date)( is it)?|what time is it|what day is it( today)?", t):
         return run("get_time")

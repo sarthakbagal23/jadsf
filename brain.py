@@ -13,6 +13,7 @@ back to the model, and then it answers.
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import urlsplit
 
 import requests
 
@@ -149,6 +150,19 @@ def ask(messages):
     if quick is not None:                      # no model needed: instant + can't mis-route
         return quick
     tools = router.select_tools(messages, TOOLS)
+    if router.is_school_request(messages):
+        # School pages contain private education data. Keep both the prompt and
+        # tool results on-device, even when the general-purpose brain uses Groq.
+        ollama_host = urlsplit(OLLAMA_HOST).hostname
+        if ollama_host not in ("localhost", "127.0.0.1", "::1"):
+            return "School requests require Ollama on this laptop; school data was not sent to a remote host."
+        if OLLAMA_MODEL.lower().endswith(":cloud"):
+            return "School requests need a locally installed Ollama model; school data was not sent to a cloud model."
+        try:
+            return _ollama_loop(messages, tools)
+        except Exception:
+            return "Local Ollama is unavailable, so I couldn't complete that school request. School data was not sent to a cloud model."
+
     order = []
     if JARVIS_BRAIN in ("auto", "groq") and GROQ_API_KEY:
         order.append(("groq", lambda: _openai_loop(

@@ -1,28 +1,77 @@
 """School: Canvas (official API, fast) + Infinite Campus (saved browser login).
 
-Canvas   - set CANVAS_BASE_URL (e.g. https://forsyth.instructure.com) and
-           CANVAS_TOKEN (Canvas > Account > Settings > New Access Token).
-Infinite - set IC_BASE_URL (your portal host, e.g. https://campus.forsyth.k12.ga.us)
-Campus     then run ONCE:  python -m integrations.school ic-login
-           You sign in yourself in a real window; the session is saved in
-           data/ic_profile and reused headlessly. No password is ever stored
-           in code, .env, or chat.
+Canvas   - set CANVAS_BASE_URL and sign in through ClassLink with ic-login.
+           A Canvas API token is optional; the shared browser session is used.
+Infinite - set IC_BASE_URL. Canvas - set CANVAS_BASE_URL. Both use the
+           same visible ClassLink sign-in and saved browser profile. A Canvas
+           token is optional. No password is stored in code or chat.
 
-Nothing here clicks or submits anything: every tool is read-only.
+Grade and assignment reads are read-only. Portal navigation opens a visible tab.
 """
 import datetime as dt
 import json
 import re
 import sys
 import time
+from contextlib import contextmanager
 
 import requests
 
-from config import CANVAS_BASE_URL, CANVAS_TOKEN, DATA_DIR, IC_BASE_URL
+from config import (CANVAS_BASE_URL, CANVAS_TOKEN, CLASSLINK_URL, DATA_DIR,
+                    EDITH_CHROME_CDP_URL, IC_BASE_URL, STUDENT_SUPPORT_TIME_URL)
 from integrations._common import tool
 
 CACHE = DATA_DIR / "school_cache.json"
-IC_PROFILE = DATA_DIR / "ic_profile"
+SCHOOL_PROFILE = DATA_DIR / "school_profile"
+IC_PROFILE = SCHOOL_PROFILE  # compatibility with the previous Infinite Campus profile
+_CDP_PLAYWRIGHT = None
+_CDP_BROWSER = None
+
+
+def _school_context(pw=None, headless=True):
+    """Use EDITH's dedicated Chrome session when configured; else local Playwright profile."""
+    global _CDP_PLAYWRIGHT, _CDP_BROWSER
+    if EDITH_CHROME_CDP_URL:
+        if _CDP_BROWSER is not None and not _CDP_BROWSER.is_connected():
+            try:
+                _CDP_PLAYWRIGHT.stop()
+            except Exception:
+                pass
+            _CDP_PLAYWRIGHT = None
+            _CDP_BROWSER = None
+        if _CDP_BROWSER is None:
+            from playwright.sync_api import sync_playwright
+            _CDP_PLAYWRIGHT = sync_playwright().start()
+            try:
+                _CDP_BROWSER = _CDP_PLAYWRIGHT.chromium.connect_over_cdp(EDITH_CHROME_CDP_URL)
+            except Exception:
+                _CDP_PLAYWRIGHT.stop()
+                _CDP_PLAYWRIGHT = None
+                raise RuntimeError("EDITH Chrome is not running. Start it with start_edith_browser.bat.")
+        if not _CDP_BROWSER.contexts:
+            raise RuntimeError("Connected EDITH Chrome has no browser context.")
+        return _CDP_BROWSER.contexts[0], False
+    if pw is None:
+        raise RuntimeError("Playwright is not available.")
+    return pw.chromium.launch_persistent_context(str(SCHOOL_PROFILE), headless=headless), True
+
+
+@contextmanager
+def _school_session(headless=True):
+    """Yield the shared CDP context or own and close a local Playwright context."""
+    if EDITH_CHROME_CDP_URL:
+        ctx, _ = _school_context(headless=headless)
+        yield ctx
+        return
+
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as pw:
+        ctx, owned = _school_context(pw, headless=headless)
+        try:
+            yield ctx
+        finally:
+            if owned:
+                ctx.close()
 
 # spoken nicknames -> words that appear in the real course name
 ALIASES = {
@@ -60,27 +109,38 @@ def cached_due():
 # ----------------------------------------------------------------- Canvas
 
 def _canvas_ready():
-    if not (CANVAS_BASE_URL and CANVAS_TOKEN):
-        raise RuntimeError("Canvas not set up: put CANVAS_BASE_URL and CANVAS_TOKEN in .env "
-                           "(Canvas > Account > Settings > New Access Token).")
+    if not CANVAS_BASE_URL:
+        raise RuntimeError("Canvas not set up: put CANVAS_BASE_URL in .env and sign in through ClassLink.")
+    if not CANVAS_TOKEN and not EDITH_CHROME_CDP_URL and not SCHOOL_PROFILE.exists():
+        raise RuntimeError("No saved ClassLink session. Start EDITH Chrome and run ic-login.")
+
+
+def _portal_get(url, params=None, headers=None):
+    """GET with the shared ClassLink browser cookies, optionally using a Canvas token."""
+    with _school_session(headless=True) as ctx:
+        response = ctx.request.get(url, params=params, headers=headers or {}, timeout=20000)
+        if response.status == 401:
+            raise RuntimeError("School portal rejected the saved ClassLink session (401). Run ic-login again.")
+        if not response.ok:
+            raise RuntimeError(f"School portal request failed (HTTP {response.status}).")
+        return {"status": response.status, "headers": dict(response.headers), "data": response.json()}
 
 
 def _canvas_get(path, params=None, pages=3):
-    _canvas_ready()
+    if not CANVAS_BASE_URL:
+        raise RuntimeError("Canvas not set up: put CANVAS_BASE_URL in .env.")
     url = CANVAS_BASE_URL.rstrip("/") + "/api/v1" + path
-    headers = {"Authorization": f"Bearer {CANVAS_TOKEN}"}
+    headers = {"Authorization": f"Bearer {CANVAS_TOKEN}"} if CANVAS_TOKEN else {}
     out = []
     for _ in range(pages):
-        r = requests.get(url, headers=headers, params=params, timeout=15)
-        if r.status_code == 401:
-            raise RuntimeError("Canvas rejected the token (401) - make a new one.")
-        r.raise_for_status()
-        data = r.json()
+        response = _portal_get(url, params=params, headers=headers)
+        data = response["data"]
         out.extend(data if isinstance(data, list) else [data])
-        nxt = r.links.get("next", {}).get("url")
-        if not nxt:
+        link = response["headers"].get("link", "")
+        match = re.search(r'<([^>]+)>;\s*rel="next"', link)
+        if not match:
             break
-        url, params = nxt, None
+        url, params = match.group(1), None
     return out
 
 
@@ -116,6 +176,34 @@ def canvas_grades():
     return rows
 
 
+def grade_extreme(direction="lowest"):
+    """Return the highest or lowest numeric current grade without LLM arithmetic."""
+    if direction not in ("lowest", "highest"):
+        return "Choose lowest or highest."
+    try:
+        rows = ic_grades()
+    except Exception:
+        rows = []
+    if not rows:
+        try:
+            rows = canvas_grades()
+        except Exception:
+            rows = []
+    numeric = []
+    for row in rows:
+        try:
+            score = float(str(row.get("score", "")).rstrip("%"))
+        except (TypeError, ValueError):
+            continue
+        numeric.append((score, row))
+    if not numeric:
+        return "No numeric current grades are available."
+    score, row = (min if direction == "lowest" else max)(numeric, key=lambda item: item[0])
+    letter = row.get("letter")
+    suffix = f" ({letter})" if letter else ""
+    return f"{direction.title()} current grade: {row['course']} — {score:.1f}%{suffix} [{row['source']}]."
+
+
 def canvas_upcoming(days=7):
     start = dt.date.today()
     items = _canvas_get("/planner/items", {
@@ -141,8 +229,8 @@ def _ic_ready():
     if not IC_BASE_URL:
         raise RuntimeError("Infinite Campus not set up: put IC_BASE_URL in .env, then run "
                            "'python -m integrations.school ic-login' once.")
-    if not IC_PROFILE.exists():
-        raise RuntimeError("No saved Infinite Campus login. Run: python -m integrations.school ic-login")
+    if not EDITH_CHROME_CDP_URL and not IC_PROFILE.exists():
+        raise RuntimeError("No saved Infinite Campus login. Start EDITH Chrome and run ic-login.")
 
 
 def _walk_ic(node, term="", out=None):
@@ -169,18 +257,10 @@ def _walk_ic(node, term="", out=None):
 
 def ic_grades():
     _ic_ready()
-    from playwright.sync_api import sync_playwright
-    with sync_playwright() as pw:
-        ctx = pw.chromium.launch_persistent_context(str(IC_PROFILE), headless=True)
-        try:
-            r = ctx.request.get(IC_BASE_URL.rstrip("/") + "/campus/resources/portal/grades", timeout=20000)
-            ctype = r.headers.get("content-type", "")
-            if r.status != 200 or "json" not in ctype:
-                raise RuntimeError("Infinite Campus session expired - run: "
-                                   "python -m integrations.school ic-login")
-            rows = _walk_ic(r.json())
-        finally:
-            ctx.close()
+    r = _portal_get(IC_BASE_URL.rstrip("/") + "/campus/resources/portal/grades")
+    if "json" not in r["headers"].get("content-type", ""):
+        raise RuntimeError("Infinite Campus session expired - run: python -m integrations.school ic-login")
+    rows = _walk_ic(r["data"])
     # keep only the latest grading task per course (the current term)
     latest = {}
     for row in rows:
@@ -189,18 +269,37 @@ def ic_grades():
 
 
 def ic_login():
-    """Open a real window so YOU sign in once; the session is saved for headless use."""
-    if not IC_BASE_URL:
-        print("Set IC_BASE_URL in .env first.")
-        return
-    from playwright.sync_api import sync_playwright
-    with sync_playwright() as pw:
-        ctx = pw.chromium.launch_persistent_context(str(IC_PROFILE), headless=False)
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        page.goto(IC_BASE_URL.rstrip("/") + "/campus/")
-        input("Sign in to Infinite Campus in the window, then press Enter here...")
-        ctx.close()
-    print("Saved. JARVIS can now read your grades.")
+    """Use EDITH Chrome, let the user navigate from ClassLink, then verify portal access."""
+    if not IC_BASE_URL and not CANVAS_BASE_URL:
+        print("Set IC_BASE_URL and/or CANVAS_BASE_URL in .env first.")
+        return False
+    SCHOOL_PROFILE.mkdir(parents=True, exist_ok=True)
+    with _school_session(headless=False) as ctx:
+        page = next((p for p in ctx.pages if "classlink.com" in p.url), None)
+        if page is None:
+            page = ctx.new_page()
+            page.goto(CLASSLINK_URL, wait_until="domcontentloaded")
+        print("Sign in to ClassLink, then use the cursor to open Canvas and Infinite Campus from its dashboard.")
+        print("Leave the school tabs open. EDITH will verify read-only access after you continue.")
+        print("Do not share your password or MFA code in chat.")
+        input("When you have opened both services, press Enter here...")
+        checks = []
+        if IC_BASE_URL:
+            try:
+                r = ctx.request.get(IC_BASE_URL.rstrip("/") + "/campus/resources/portal/grades", timeout=20000)
+                checks.append(("Infinite Campus", r.status == 200 and "json" in r.headers.get("content-type", "")))
+            except Exception:
+                checks.append(("Infinite Campus", False))
+        if CANVAS_BASE_URL:
+            try:
+                r = ctx.request.get(CANVAS_BASE_URL.rstrip("/") + "/api/v1/courses",
+                                    params={"enrollment_state": "active", "per_page": 1}, timeout=20000)
+                checks.append(("Canvas", r.status == 200 and "json" in r.headers.get("content-type", "")))
+            except Exception:
+                checks.append(("Canvas", False))
+        for service, ready in checks:
+            print(f"{service}: {'ready' if ready else 'not verified'}")
+    return bool(checks) and all(ready for _, ready in checks)
 
 
 # -------------------------------------------------------------- tool glue
@@ -229,9 +328,16 @@ def grades(course=""):
     return out + ("\n\nProblems:\n" + "\n".join(errs) if errs else "")
 
 
-def upcoming_work(days=7):
+def upcoming_work(days=7, course=""):
     try:
         items = canvas_upcoming(days)
+        if course:
+            match = find_course(course)
+            if not match:
+                return f"No Canvas class matches '{course}'."
+            name = match["name"].lower()
+            items = [i for i in items if name in i["course"].lower()
+                     or i["course"].lower() in name]
     except Exception as e:
         return f"Couldn't fetch assignments: {e}"
     _save_cache(due=items)
@@ -287,16 +393,132 @@ def class_materials(course):
         return f"class_materials failed: {e}"
 
 
+def open_school_portal(portal):
+    """Open a configured school service in a new visible EDITH Chrome tab."""
+    key = re.sub(r"[^a-z]+", " ", str(portal).lower()).strip()
+    portals = {
+        "classlink": ("ClassLink", CLASSLINK_URL),
+        "canvas": ("Canvas", CANVAS_BASE_URL),
+        "infinite campus": ("Infinite Campus", IC_BASE_URL),
+        "ic": ("Infinite Campus", IC_BASE_URL),
+        "student support time": ("Student Support Time", STUDENT_SUPPORT_TIME_URL),
+        "dawg time": ("Student Support Time", STUDENT_SUPPORT_TIME_URL),
+    }
+    target = portals.get(key)
+    if target is None:
+        return "Choose ClassLink, Canvas, Infinite Campus, or Student Support Time."
+    name, url = target
+    if not url:
+        return f"{name} is not configured in .env."
+    from integrations.browser import browser_open
+    return browser_open(url)
+
+
+def support_time_status(date=""):
+    """Read the selected Dawg Time date, available sessions, and existing sign-ups."""
+    from integrations.browser import _STATE, _page
+
+    page = _page()
+    context = _STATE["context"]
+    pages = [p for p in context.pages if "forsyth.studentsupporttime.com" in p.url]
+    if not pages:
+        opened = open_school_portal("Student Support Time")
+        page = _STATE["page"]
+        if not page:
+            return opened
+    else:
+        page = pages[-1]
+        _STATE["page"] = page
+        page.bring_to_front()
+
+    try:
+        page.wait_for_function("document.body && document.body.innerText.includes('Dawg Time')", timeout=15000)
+        page.locator("li.list-group-item.clearfix.hover").first.wait_for(state="attached", timeout=10000)
+    except Exception:
+        return "Student Support Time is open, but its dashboard is not ready. Sign in through ClassLink and try again."
+
+    if date:
+        query = re.sub(r"\s+", " ", str(date).strip().lower())
+        try:
+            parsed = dt.date.fromisoformat(query)
+            query = f"{parsed.strftime('%b').lower()} {parsed.day}"
+        except ValueError:
+            pass
+        matches = []
+        for link in page.locator("a.btn-wide").all():
+            if not link.is_visible():
+                continue
+            label = re.sub(r"\s+", " ", (link.text_content() or "").strip().lower())
+            if query in label:
+                matches.append(link)
+        if not matches:
+            return f"I couldn't find '{date}' in the visible Student Support Time calendar."
+        matches[0].click(timeout=5000)
+        page.wait_for_timeout(700)
+
+    selected_date = "the currently selected day"
+    for link in page.locator("a.btn-wide").all():
+        if not link.is_visible():
+            continue
+        classes = link.get_attribute("class") or ""
+        if "text-bold" in classes and "btn-o" not in classes:
+            selected_date = re.sub(r"\s+", " ", (link.text_content() or "").strip())
+            selected_date = re.sub(r"^DT\s*", "", selected_date, flags=re.I)
+            break
+
+    sessions = []
+    for card in page.locator("li.list-group-item.clearfix.hover").all():
+        if not card.is_visible():
+            continue
+        lines = [line.strip() for line in card.inner_text().splitlines() if line.strip()]
+        if not lines or "No Session" in lines:
+            continue
+        detail = " — ".join(lines[1:]) if len(lines) > 1 else lines[0]
+        sessions.append(detail[:260])
+
+    signed_up = set()
+    for card in page.locator("li.openSession").all():
+        if not card.is_visible():
+            continue
+        lines = [line.strip() for line in card.inner_text().splitlines() if line.strip()]
+        if lines and "Signed Up" in lines[0]:
+            detail = " — ".join(line for line in lines[1:3] if line and line != "Details")
+            if detail:
+                signed_up.add(detail[:180])
+
+    output = [f"Dawg Time — {selected_date}"]
+    if sessions:
+        output.append("Sessions shown:")
+        output.extend(f"- {item}" for item in sessions)
+    else:
+        output.append("No sessions are shown for this date.")
+    if signed_up:
+        output.append("Already signed up:")
+        output.extend(f"- {item}" for item in sorted(signed_up))
+        check_ins = [button for button in page.locator("li.openSession button").all() if button.is_visible()]
+        output.append(f"Check-in controls visible: {len(check_ins)}")
+    return "\n".join(output)
+
+
 TOOLS = [
     tool("get_grades", "Current grades (Infinite Campus + Canvas). Optionally one class, e.g. 'chem'.",
          {"course": {"type": "string"}}, [], grades),
-    tool("upcoming_work", "Assignments due in the next N days across all classes (Canvas).",
-         {"days": {"type": "integer"}}, [], upcoming_work),
+    tool("grade_extreme", "Accurately find the highest or lowest current numeric grade.",
+         {"direction": {"type": "string", "enum": ["lowest", "highest"]}},
+         ["direction"], grade_extreme),
+    tool("upcoming_work", "Assignments due in the next N days across all classes or one named class (Canvas).",
+         {"days": {"type": "integer"}, "course": {"type": "string"}}, [], upcoming_work),
     tool("class_check", "One class: grade, work due, latest announcement. Use for 'check chem'.",
          {"course": {"type": "string", "description": "chem, csa, lang, apush, physics, stats, precalc"}},
          ["course"], class_check),
     tool("class_materials", "Modules and recent files for a class (Canvas).",
          {"course": {"type": "string"}}, ["course"], class_materials),
+    tool("open_school_portal", "Open a school service in a new visible EDITH Chrome tab.",
+         {"portal": {"type": "string", "enum": ["ClassLink", "Canvas", "Infinite Campus", "Student Support Time"]}},
+         ["portal"], open_school_portal),
+    tool("support_time_status", "Read the selected Student Support Time date, session availability, and existing sign-ups. This does not change sign-ups.",
+         {"date": {"type": "string", "description": "Optional visible date, for example Oct 30 or 2026-10-30"}},
+         [], support_time_status),
 ]
 
 if __name__ == "__main__":

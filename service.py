@@ -1,4 +1,4 @@
-"""Always-on JARVIS service:
+"""Always-on EDITH service:
 Runs both the Web / Phone Server AND the Voice Wake-Word Engine in the background.
 Includes an auto-reconnect watchdog loop so it never crashes or stops.
 """
@@ -35,7 +35,7 @@ def main():
 
     time.sleep(1)
     print(f"[{NAME} Service] Web UI is active at http://localhost:{SERVER_PORT}")
-    print(f"[{NAME} Service] Initializing Voice Wake Word ('Hey Jarvis')...")
+    print(f"[{NAME} Service] Initializing Voice Wake Word ('Hey EDITH')...")
 
     # 2. Run Voice Watchdog loop
     while True:

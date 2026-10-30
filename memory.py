@@ -1,19 +1,20 @@
-"""Long-term memory: facts, notes, and conversation history in SQLite.
-
-Nothing leaves the laptop. This is the layer that makes JARVIS remember
-you across restarts instead of starting from zero every time.
-"""
+"""Durable facts and notes in SQLite; recent conversation stays in RAM only."""
 import sqlite3
 import time
+from collections import deque
 
 from config import MEMORY_DB
+
+# Short-term context helps follow a conversation but disappears on restart.
+_session_history = deque(maxlen=40)
 
 
 def _conn():
     conn = sqlite3.connect(MEMORY_DB)
     conn.execute("CREATE TABLE IF NOT EXISTS facts (key TEXT PRIMARY KEY, value TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT, created REAL)")
-    conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT, text TEXT, created REAL)")
+    # Remove legacy transcripts: ordinary conversation is no longer durable memory.
+    conn.execute("DROP TABLE IF EXISTS history")
     return conn
 
 
@@ -46,12 +47,10 @@ def add_note(text):
 
 
 def log(role, text):
-    with _conn() as c:
-        c.execute("INSERT INTO history(role, text, created) VALUES(?, ?, ?)", (role, text, time.time()))
+    """Keep temporary conversational context in memory, never in the database."""
+    _session_history.append((role, text))
 
 
 def recent_history(n=10):
-    """Last n turns as (role, text) tuples, oldest first."""
-    with _conn() as c:
-        rows = c.execute("SELECT role, text FROM history ORDER BY id DESC LIMIT ?", (n,)).fetchall()
-    return list(reversed(rows))
+    """Return recent in-session context, oldest first. Nothing is persisted."""
+    return list(_session_history)[-n:]

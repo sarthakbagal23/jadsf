@@ -1,4 +1,4 @@
-"""Computer use — let JARVIS see the screen and drive the mouse/keyboard.
+"""Computer use — let EDITH see the screen and drive the mouse/keyboard.
 
 How it works: screenshot -> Groq vision model describes the screen and
 returns element coordinates (0-1000 scale) -> pyautogui clicks/types.
@@ -11,7 +11,7 @@ Honest limits:
   destructive actions (send, delete, buy, submit) must be confirmed with
   the user first (see the SYSTEM prompt in brain.py).
 
-Safety: everything here is OFF unless JARVIS_COMPUTER_USE=1 in .env.
+Safety: everything here is OFF unless EDITH_COMPUTER_USE=1 in .env.
 pyautogui's failsafe is on: slam the mouse into a corner to abort.
 """
 import base64
@@ -28,7 +28,7 @@ from config import (
 from integrations._common import tool
 
 if not JARVIS_COMPUTER_USE:
-    raise RuntimeError("computer use is off — set JARVIS_COMPUTER_USE=1 in .env")
+    raise RuntimeError("computer use is off — set EDITH_COMPUTER_USE=1 in .env")
 
 SHOTS = DATA_DIR / "screenshots"
 SHOTS.mkdir(exist_ok=True)

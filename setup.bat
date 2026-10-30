@@ -1,5 +1,5 @@
 @echo off
-REM JARVIS one-time setup (Windows)
+REM EDITH one-time setup (Windows)
 python --version >nul 2>&1 || (echo Install Python 3.12+ from python.org first, tick "Add to PATH". & pause & exit /b 1)
 python -m venv .venv
 call .venv\Scripts\activate

@@ -1,4 +1,4 @@
-"""Discord — talk to JARVIS from Discord. Run:  python -m integrations.discord_bot
+"""Discord — talk to EDITH from Discord. Run:  python -m integrations.discord_bot
 
 NOTE: PersonalJarvis ships Telegram + Slack surfaces, not Discord — so
 this bot is built fresh on discord.py. Same pattern as their surfaces:
@@ -28,7 +28,7 @@ client = discord.Client(intents=intents)
 
 @client.event
 async def on_ready():
-    print(f"JARVIS is on Discord as {client.user}.")
+    print(f"EDITH is on Discord as {client.user}.")
 
 
 @client.event

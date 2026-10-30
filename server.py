@@ -1,4 +1,4 @@
-"""Phone server: talk to JARVIS from your phone.
+"""Phone server: talk to EDITH from your phone.
 
 Run:  python server.py
 Then on your phone (same Wi-Fi, or anywhere via Tailscale):
@@ -18,18 +18,18 @@ app = FastAPI(title=NAME)
 
 PAGE = """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>JARVIS</title><style>
+<title>EDITH</title><style>
 body{font-family:system-ui;background:#0b1220;color:#e2e8f0;margin:0;padding:16px}
 #log{max-width:600px;margin:0 auto 90px}
 .msg{padding:10px 14px;border-radius:14px;margin:8px 0;white-space:pre-wrap}
 .you{background:#1e40af;margin-left:40px}
-.jarvis{background:#1e293b;margin-right:40px}
+.edith{background:#1e293b;margin-right:40px}
 #bar{position:fixed;bottom:0;left:0;right:0;background:#0b1220;padding:12px;display:flex;gap:8px}
 #inp{flex:1;padding:12px;border-radius:12px;border:1px solid #334155;background:#1e293b;color:#fff;font-size:16px}
 button{padding:12px 18px;border-radius:12px;border:0;background:#2563eb;color:#fff;font-size:16px}
 </style></head><body>
 <div id="log"></div>
-<div id="bar"><input id="inp" placeholder="Talk to JARVIS..." autocomplete="off"><button onclick="send()">Send</button></div>
+<div id="bar"><input id="inp" placeholder="Talk to EDITH..." autocomplete="off"><button onclick="send()">Send</button></div>
 <script>
 const log=document.getElementById('log'), inp=document.getElementById('inp');
 function add(t,c){const d=document.createElement('div');d.className='msg '+c;d.textContent=t;log.appendChild(d);window.scrollTo(0,document.body.scrollHeight);}
@@ -37,8 +37,8 @@ async function send(){
   const m=inp.value.trim(); if(!m) return; inp.value='';
   add(m,'you');
   const r=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+(localStorage.tok||'')},body:JSON.stringify({message:m})});
-  if(r.status===401){const t=prompt('JARVIS access token:'); if(t){localStorage.tok=t; inp.value=m; log.lastChild.remove(); return send();} add('Not authorized.','jarvis'); return;}
-  const j=await r.json(); add(j.reply,'jarvis');
+  if(r.status===401){const t=prompt('EDITH access token:'); if(t){localStorage.tok=t; inp.value=m; log.lastChild.remove(); return send();} add('Not authorized.','edith'); return;}
+  const j=await r.json(); add(j.reply,'edith');
 }
 inp.addEventListener('keydown',e=>{if(e.key==='Enter')send();});
 </script></body></html>
@@ -46,7 +46,7 @@ inp.addEventListener('keydown',e=>{if(e.key==='Enter')send();});
 
 
 def auth(authorization: str = Header(default="")):
-    """If JARVIS_TOKEN is set, every API call must send 'Authorization: Bearer <token>'."""
+    """If EDITH_TOKEN is set, every API call must send 'Authorization: Bearer <token>'."""
     if SERVER_TOKEN and authorization != f"Bearer {SERVER_TOKEN}":
         raise HTTPException(401, "bad token")
 

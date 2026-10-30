@@ -1,4 +1,4 @@
-"""Tool registry: everything JARVIS can DO.
+"""Tool registry: everything EDITH can DO.
 
 Each tool has a JSON schema (so the LLM knows when to call it) and a
 Python function that runs it. To add a new ability, write a function and

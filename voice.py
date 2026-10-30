@@ -4,7 +4,7 @@ Install with:  pip install -r requirements-voice.txt
 Wake word needs a free Picovoice key: console.picovoice.ai (free tier),
 set as PICOVOICE_ACCESS_KEY in .env.
 
-Pipeline: Porcupine wake word ("Jarvis") -> record until silence ->
+Pipeline: Porcupine wake word ("EDITH") -> record until silence ->
 faster-whisper STT (local) -> brain -> pyttsx3 TTS (Windows SAPI voice).
 """
 import io
@@ -107,7 +107,7 @@ def _speak_elevenlabs(text, oww_model=None):
                     pred = oww_model.predict(chunk.flatten())
                     for name, score in pred.items():
                         if score >= 0.20:
-                            print("\n[Interrupted by 'Hey Jarvis'!]")
+                            print("\n[Interrupted by 'Hey EDITH'!]")
                             pygame.mixer.music.stop()
                             interrupted = True
                             oww_model.reset()
@@ -239,12 +239,12 @@ def listen_once(max_seconds=10, min_seconds=2):
 
 
 def _wait_for_wake_word(model=None):
-    """Block until openWakeWord hears 'Hey Jarvis'."""
+    """Block until openWakeWord hears 'Hey EDITH'."""
     import numpy as np
     from openwakeword.model import Model
     import sounddevice as sd
 
-    oww = model or Model(wakeword_models=["hey_jarvis_v0.1.onnx"], inference_framework="onnx")
+    oww = model or Model(wakeword_models=["hey_edith_v0.1.onnx"], inference_framework="onnx")
     chunk_samples = 1280  # 80ms at 16kHz
     audio_q = queue.Queue()
 
@@ -264,14 +264,14 @@ def _wait_for_wake_word(model=None):
 
 
 def voice_loop():
-    """Full voice loop: wake word ('Hey Jarvis') -> listen -> think -> speak, forever."""
+    """Full voice loop: wake word ('Hey EDITH') -> listen -> think -> speak, forever."""
     from brain import ask
     import memory
     from openwakeword.model import Model
 
-    print("[voice] Loading 'Hey Jarvis' wake-word model (openWakeWord)...")
+    print("[voice] Loading 'Hey EDITH' wake-word model (openWakeWord)...")
     try:
-        oww = Model(wakeword_models=["hey_jarvis_v0.1.onnx"], inference_framework="onnx")
+        oww = Model(wakeword_models=["hey_edith_v0.1.onnx"], inference_framework="onnx")
     except Exception as e:
         print(f"[voice] Error loading wake word model: {e}")
         return
@@ -279,8 +279,8 @@ def voice_loop():
     print("[voice] Warming up local speech-to-text (Whisper)...")
     get_whisper()
 
-    print("Listening for 'Hey Jarvis'... (Ctrl+C to stop)")
-    speak("JARVIS voice system online. I'm listening.")
+    print("Listening for 'Hey EDITH'... (Ctrl+C to stop)")
+    speak("EDITH voice system online. I'm listening.")
     while True:
         try:
             _wait_for_wake_word(oww)
@@ -306,9 +306,9 @@ def voice_loop():
         reply = ask(messages)
         memory.log("user", text)
         memory.log("assistant", reply)
-        print(f"JARVIS: {reply}")
+        print(f"EDITH: {reply}")
         interrupted = speak(reply, oww_model=oww)
         if interrupted:
             print("[Interrupt detected: stopping reply and listening]")
         time.sleep(0.3)
-        print("\nListening for 'Hey Jarvis'...")
+        print("\nListening for 'Hey EDITH'...")

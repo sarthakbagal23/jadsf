@@ -90,7 +90,7 @@ def _study():
 
 
 def _alarm(subject, minutes):
-    print(f"\n[JARVIS] {minutes}-minute {subject} session is up, sir.")
+    print(f"\n[EDITH] {minutes}-minute {subject} session is up, sir.")
     try:
         import winsound
         for _ in range(3):

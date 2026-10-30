@@ -11,10 +11,10 @@ from voice import speak, stop_speaking
 
 def text_loop():
     print("=" * 50)
-    print("   JARVIS online. Type to talk. 'quit' to exit.")
+    print("   EDITH online. Type to talk. 'quit' to exit.")
     print("   (Press Enter on empty line or Ctrl+C to interrupt speech)")
     print("=" * 50 + "\n")
-    speak("JARVIS online. Ready when you are.")
+    speak("EDITH online. Ready when you are.")
     while True:
         try:
             user = input("you: ").strip()
@@ -32,14 +32,14 @@ def text_loop():
             stop_speaking()
             continue
         stop_speaking()
-        print("JARVIS: thinking...")
+        print("EDITH: thinking...")
         history = memory.recent_history(10)
         messages = [{"role": r, "content": t} for r, t in history]
         messages.append({"role": "user", "content": user})
         reply = ask(messages)
         memory.log("user", user)
         memory.log("assistant", reply)
-        print(f"JARVIS: {reply}\n")
+        print(f"EDITH: {reply}\n")
         speak(reply)
 
 if __name__ == "__main__":

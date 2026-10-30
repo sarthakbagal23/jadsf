@@ -7,7 +7,7 @@ directly (no MCP server needed).
 Setup:
   1. notion.so/my-integrations -> New integration -> copy the
      "Internal Integration Secret" as NOTION_API_KEY in .env.
-  2. In Notion, open each page/database you want JARVIS to touch ->
+  2. In Notion, open each page/database you want EDITH to touch ->
      "..." -> Add connections -> pick your integration.
 """
 import requests

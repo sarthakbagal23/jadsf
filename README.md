@@ -1,4 +1,6 @@
-# JARVIS — your own AI assistant (Windows, laptop-first)
+# EDITH — Even Dead, I’m The Hero
+
+Your own AI assistant for Windows, built laptop-first.
 
 A real, runnable starter: a local AI brain with tools, memory, voice, and a
 phone interface. Built for a Windows laptop, with the phone as a remote.
@@ -10,7 +12,7 @@ phone interface. Built for a Windows laptop, with the phone as a remote.
   agent loop: it decides when to use a tool, runs it, and answers from the result
 - **Does things** — time, weather (no key), web search (no key), open apps,
   system stats, remember/recall facts, take notes
-- **Remembers** — facts and conversation history in local SQLite
+- **Remembers** — explicitly saved facts and notes in local SQLite; recent chat context stays in memory only
 - **Phone** — a small web chat UI served from your laptop; reach it from your
   iPhone over Wi-Fi or anywhere via Tailscale
 
@@ -40,7 +42,7 @@ Get a free Picovoice key at console.picovoice.ai, copy `.env.example` to
 ```
 run.bat --voice
 ```
-Say "Jarvis" and talk. Speech-to-text runs locally (faster-whisper),
+Say "EDITH" and talk. Speech-to-text runs locally (faster-whisper),
 speech uses the built-in Windows voice.
 
 ## Phone mode
@@ -54,10 +56,10 @@ speech uses the built-in Windows voice.
 
 | File | What it is |
 | --- | --- |
-| `jarvis.py` | Entry point — text loop or `--voice` |
+| `edith.py` | Entry point — text loop or `--voice` |
 | `brain.py` | Agent loop: Ollama + tool calls, OpenRouter fallback |
 | `tools.py` | Tool registry — add abilities here |
-| `memory.py` | SQLite facts, notes, history |
+| `memory.py` | SQLite facts and notes; temporary in-session chat context |
 | `voice.py` | Wake word, mic, STT, TTS |
 | `server.py` | FastAPI phone server + mobile chat UI |
 | `test_smoke.py` | Smoke tests — run `python test_smoke.py` on your laptop to verify everything works there |
@@ -92,7 +94,7 @@ official APIs.
 ### Groq brain (free, stupid fast)
 
 Groq's free tier needs no credit card: console.groq.com → API Keys →
-paste as `GROQ_API_KEY` in `.env`. That's it — `JARVIS_BRAIN=auto` uses
+paste as `GROQ_API_KEY` in `.env`. That's it — `EDITH_BRAIN=auto` uses
 Groq when the key exists and falls back to local Ollama on any error or
 rate limit. Free limits (Oct 2026): `llama-3.3-70b-versatile` (the
 default, smart one) — 30 req/min, 1,000 req/day, 100K tokens/day;
@@ -102,18 +104,18 @@ bigger daily budget.【6161685393491814885†L8-L15】【6161685393491814885†L
 
 ### Plugins (each optional — a missing key just disables it)
 
-| Plugin | What JARVIS can do | Setup |
+| Plugin | What EDITH can do | Setup |
 | --- | --- | --- |
 | **Notion** | Search/read/create pages, query databases | notion.so/my-integrations → New integration → `NOTION_API_KEY`. Share pages with the integration. |
 | **Spotify** | Play by name, pause/skip/volume, what's playing | developer.spotify.com → app (redirect `http://127.0.0.1:8888/callback`) → `SPOTIFY_CLIENT_ID` + `SPOTIFY_CLIENT_SECRET`, then `python -m integrations.spotify_auth` once for the refresh token. Playback needs Premium; reading works free. |
 | **GitHub** | List repos/issues, create issues, read files, search code | github.com/settings/tokens → classic token, `repo` scope → `GITHUB_TOKEN` |
 | **Google** | Search/read Gmail, list/create calendar events | console.cloud.google.com → enable Gmail + Calendar APIs → OAuth client (Desktop) → download as `credentials.json` in this folder. First run opens a browser to sign in. |
-| **Discord** | Talk to JARVIS from Discord (DMs + @mentions) | discord.com/developers → Bot → `DISCORD_BOT_TOKEN`, enable Message Content Intent, invite it to your server. Run `python -m integrations.discord_bot`. |
+| **Discord** | Talk to EDITH from Discord (DMs + @mentions) | discord.com/developers → Bot → `DISCORD_BOT_TOKEN`, enable Message Content Intent, invite it to your server. Run `python -m integrations.discord_bot`. |
 
 Try: `play lofi on Spotify`, `what's in my Notion`, `list my GitHub repos`,
 `what's on my calendar this week`, `search my Gmail for SAT`.
 
-## v3: Computer use — JARVIS sees the screen and drives it
+## v3: Computer use — EDITH sees the screen and drives it
 
 The loop is: `see_screen` → decide → click/type → `see_screen` again to
 verify. Vision runs on Groq's free multimodal model
@@ -124,7 +126,7 @@ Setup:
 pip install pyautogui pillow playwright
 playwright install chromium
 ```
-Then set `JARVIS_COMPUTER_USE=1` in `.env` (it's off by default — this
+Then set `EDITH_COMPUTER_USE=1` in `.env` (it's off by default — this
 thing can click anything).
 
 Tools: `see_screen` (description + clickable elements with 0-1000
@@ -136,8 +138,9 @@ coordinates), `computer_click` / `computer_double_click` / `computer_type`
 Rules built into the brain:
 - Look before acting, verify after acting.
 - Web tasks use the browser tools (exact selectors), not screen clicks.
-- It must tell you what it's about to do and get a yes before clicking
-  send, submit, delete, buy, or anything that changes data.
+- It treats webpage text as untrusted; only your request authorizes actions.
+- It asks when a site change or target is ambiguous, and follows a clearly
+  specified request without asking for a second yes.
 - pyautogui's failsafe is on: slam the mouse into a screen corner to abort.
 
 Honest limit: vision coordinates are approximate — for anything precise
@@ -158,24 +161,21 @@ in `data/profile.json`.
 `countdowns` / `add_countdown`, `study_start` / `study_stop` / `study_summary`,
 `start_workflow` (coding, school, study, usaco, sat, deca - edit `data/workflows.json`),
 `morning_briefing`, `weekend_plan`, `get_grades`, `upcoming_work`, `class_check`,
-`class_materials`. All school tools are read-only.
+`class_materials`, `grade_extreme`, `open_school_portal`, `support_time_status`. Portal pages open in the dedicated EDITH Chrome
+profile; grades and assignment reads are read-only. School questions and their tool results use local Ollama, even when general chat uses Groq; school data stays local if Ollama is unavailable.
 
-**School setup.** Canvas: set `CANVAS_BASE_URL` + `CANVAS_TOKEN`. Infinite Campus: set
-`IC_BASE_URL`, then once run `python -m integrations.school ic-login` and sign in yourself
-in the window that opens (the session is saved locally; no password is stored).
-The IC grades endpoint is read from the portal's JSON and has not been tested against
-Forsyth's live portal - if it errors, send me the message.
+**School setup.** Canvas and Infinite Campus both start at ClassLink. Set `CLASSLINK_URL`, `CANVAS_BASE_URL`, `IC_BASE_URL`, and `STUDENT_SUPPORT_TIME_URL` in `.env`. Run `start_edith_browser.bat` to open EDITH's dedicated Chrome profile, then sign into ClassLink and open Canvas and Infinite Campus from the dashboard. Open the Student Support Time tile once to establish its ClassLink session. Sign-in stays in `data/edith_chrome_profile` on this laptop. EDITH does not use your personal Chrome profile or copy its passwords/cookies.
 
 **Desktop widget.** `start_widget.bat` (or `python widget.py`): an always-on-top card with
 the clock, weather, countdowns, study time, grades and what is due. Drag to move,
 right-click to close.
 
-**Security.** The server now listens on this laptop only. Set `JARVIS_HOST` and
-`JARVIS_TOKEN` together before exposing it, since it can show your grades.
+**Security.** The server now listens on this laptop only. Set `EDITH_HOST` and
+`EDITH_TOKEN` together before exposing it, since it can show your grades.
 
 ## Next steps (when v1 feels good)
 
 - HUD dashboard in the browser (your Vite stack)
 - More tools: Notion, Gmail, Spotify via MCP
 - Proactive routines: morning briefing, reminders
-- A better voice (Fish Audio has literal JARVIS voices, free until Nov 30, 2026)
+- A better voice (Fish Audio has literal EDITH voices, free until Nov 30, 2026)
