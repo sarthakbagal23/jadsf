@@ -52,6 +52,12 @@ GROUPS = [
      ["browser_open", "browser_text", "browser_click", "browser_fill", "browser_screenshot"]),
     (r"search|look up|google|who |what is|latest|news|price|score", ["web_search"]),
 ]
+AGENT_TOOLS = ["browse", "computer_task", "open_sites", "list_tabs", "close_tabs", "grades_sweep",
+               "set_class_day", "research_opportunities", "list_opportunities", "support_time_checkin",
+               "support_time_signup", "big_picture", "task_status", "cancel_task"]
+GROUPS.append((r"browse|web ?site|online|\btabs?\b|go to|sign me up|sign up|check me in|check in|register|"
+               r"opportunit|internship|extracurricular|\bec\b|research|odd|even|big picture|prioriti|"
+               r"status|cancel|desktop|on my (computer|laptop)", AGENT_TOOLS))
 FALLBACK = ["web_search", "countdowns"]
 
 
@@ -87,6 +93,13 @@ def fast_path(text, tool_map):
     """Run a tool directly for crisp commands. Returns reply text, or None."""
     t = re.sub(r"[?!.,]", "", text.lower()).strip()
     t = re.sub(r"^(hey |ok |okay )?(edith|please)\s*,?\s*", "", t).strip()
+    try:                                       # agent intents: tabs, sweeps, approvals, research
+        from edith_agent import intents
+        quick = intents.match(text, tool_map)
+        if quick is not None:
+            return quick
+    except Exception as e:
+        return f"That failed: {str(e).splitlines()[0][:160]}"
     if re.search(r"\b(lowest|worst|highest|best)\b", t) and re.search(r"\b(grades?|class|course)\b", t):
         direction = "highest" if re.search(r"\b(highest|best)\b", t) else "lowest"
         fn = tool_map.get("grade_extreme")

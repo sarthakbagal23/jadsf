@@ -146,6 +146,11 @@ def ask(messages):
     """Run one agent turn. `messages` is a list of {role, content} dicts."""
     messages = messages[-HISTORY_TURNS:]
     last = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+    try:
+        from edith_agent import context
+        context.set_user_text(last)                # tools check what was actually asked
+    except Exception:
+        pass
     quick = router.fast_path(last, _tool_map())
     if quick is not None:                      # no model needed: instant + can't mis-route
         return quick

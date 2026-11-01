@@ -66,4 +66,14 @@ SERVER_PORT = int(os.environ.get("EDITH_PORT", os.environ.get("JARVIS_PORT", "87
 SERVER_HOST = os.environ.get("EDITH_HOST", os.environ.get("JARVIS_HOST", "127.0.0.1"))
 SERVER_TOKEN = os.environ.get("EDITH_TOKEN", os.environ.get("JARVIS_TOKEN", ""))
 
+# --- agent (browser/laptop control) ---
+AGENT_MAX_STEPS = int(os.environ.get("EDITH_AGENT_STEPS", "25"))
+BROWSER_HEADLESS = os.environ.get("EDITH_BROWSER_HEADLESS", "") == "1"   # tests / servers only
+AGENT_NARRATE = os.environ.get("EDITH_NARRATE", "key")     # off | key (start/approval/done) | all
+NTFY_TOPIC = os.environ.get("EDITH_NTFY_TOPIC", "")        # phone push; contents are always generic
+NTFY_SERVER = os.environ.get("EDITH_NTFY_SERVER", "https://ntfy.sh")
+# School tasks never leave the laptop, so the local model does the thinking for them.
+# A 3B model is weak at driving a browser - 8B+ (e.g. qwen2.5:7b, llama3.1:8b) is much better.
+LOCAL_AGENT_MODEL = os.environ.get("EDITH_LOCAL_AGENT_MODEL", OLLAMA_MODEL)
+
 MEMORY_DB = DATA_DIR / "memory.db"

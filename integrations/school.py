@@ -13,7 +13,6 @@ import json
 import re
 import sys
 import time
-from contextlib import contextmanager
 
 import requests
 
@@ -24,54 +23,12 @@ from integrations._common import tool
 CACHE = DATA_DIR / "school_cache.json"
 SCHOOL_PROFILE = DATA_DIR / "school_profile"
 IC_PROFILE = SCHOOL_PROFILE  # compatibility with the previous Infinite Campus profile
-_CDP_PLAYWRIGHT = None
-_CDP_BROWSER = None
 
 
-def _school_context(pw=None, headless=True):
-    """Use EDITH's dedicated Chrome session when configured; else local Playwright profile."""
-    global _CDP_PLAYWRIGHT, _CDP_BROWSER
-    if EDITH_CHROME_CDP_URL:
-        if _CDP_BROWSER is not None and not _CDP_BROWSER.is_connected():
-            try:
-                _CDP_PLAYWRIGHT.stop()
-            except Exception:
-                pass
-            _CDP_PLAYWRIGHT = None
-            _CDP_BROWSER = None
-        if _CDP_BROWSER is None:
-            from playwright.sync_api import sync_playwright
-            _CDP_PLAYWRIGHT = sync_playwright().start()
-            try:
-                _CDP_BROWSER = _CDP_PLAYWRIGHT.chromium.connect_over_cdp(EDITH_CHROME_CDP_URL)
-            except Exception:
-                _CDP_PLAYWRIGHT.stop()
-                _CDP_PLAYWRIGHT = None
-                raise RuntimeError("EDITH Chrome is not running. Start it with start_edith_browser.bat.")
-        if not _CDP_BROWSER.contexts:
-            raise RuntimeError("Connected EDITH Chrome has no browser context.")
-        return _CDP_BROWSER.contexts[0], False
-    if pw is None:
-        raise RuntimeError("Playwright is not available.")
-    return pw.chromium.launch_persistent_context(str(SCHOOL_PROFILE), headless=headless), True
+def _browser():
+    from edith_agent.browser import get_browser
+    return get_browser()
 
-
-@contextmanager
-def _school_session(headless=True):
-    """Yield the shared CDP context or own and close a local Playwright context."""
-    if EDITH_CHROME_CDP_URL:
-        ctx, _ = _school_context(headless=headless)
-        yield ctx
-        return
-
-    from playwright.sync_api import sync_playwright
-    with sync_playwright() as pw:
-        ctx, owned = _school_context(pw, headless=headless)
-        try:
-            yield ctx
-        finally:
-            if owned:
-                ctx.close()
 
 # spoken nicknames -> words that appear in the real course name
 ALIASES = {
@@ -117,13 +74,15 @@ def _canvas_ready():
 
 def _portal_get(url, params=None, headers=None):
     """GET with the shared ClassLink browser cookies, optionally using a Canvas token."""
-    with _school_session(headless=True) as ctx:
-        response = ctx.request.get(url, params=params, headers=headers or {}, timeout=20000)
-        if response.status == 401:
-            raise RuntimeError("School portal rejected the saved ClassLink session (401). Run ic-login again.")
-        if not response.ok:
-            raise RuntimeError(f"School portal request failed (HTTP {response.status}).")
-        return {"status": response.status, "headers": dict(response.headers), "data": response.json()}
+    r = _browser().request(url, params=params, headers=headers or {})
+    if r["status"] == 401:
+        raise RuntimeError("School portal rejected the saved ClassLink session (401). Run ic-login again.")
+    if not r["ok"]:
+        raise RuntimeError(f"School portal request failed (HTTP {r['status']}).")
+    if r["data"] is None:
+        raise RuntimeError("School portal did not return data - the ClassLink session has probably expired. "
+                           "Run: python -m integrations.school ic-login")
+    return {"status": r["status"], "headers": r["headers"], "data": r["data"]}
 
 
 def _canvas_get(path, params=None, pages=3):
@@ -269,36 +228,33 @@ def ic_grades():
 
 
 def ic_login():
-    """Use EDITH Chrome, let the user navigate from ClassLink, then verify portal access."""
+    """Open ClassLink in EDITH Chrome, let the user sign in, then verify portal access."""
     if not IC_BASE_URL and not CANVAS_BASE_URL:
         print("Set IC_BASE_URL and/or CANVAS_BASE_URL in .env first.")
         return False
-    SCHOOL_PROFILE.mkdir(parents=True, exist_ok=True)
-    with _school_session(headless=False) as ctx:
-        page = next((p for p in ctx.pages if "classlink.com" in p.url), None)
-        if page is None:
-            page = ctx.new_page()
-            page.goto(CLASSLINK_URL, wait_until="domcontentloaded")
-        print("Sign in to ClassLink, then use the cursor to open Canvas and Infinite Campus from its dashboard.")
-        print("Leave the school tabs open. EDITH will verify read-only access after you continue.")
-        print("Do not share your password or MFA code in chat.")
-        input("When you have opened both services, press Enter here...")
-        checks = []
-        if IC_BASE_URL:
-            try:
-                r = ctx.request.get(IC_BASE_URL.rstrip("/") + "/campus/resources/portal/grades", timeout=20000)
-                checks.append(("Infinite Campus", r.status == 200 and "json" in r.headers.get("content-type", "")))
-            except Exception:
-                checks.append(("Infinite Campus", False))
-        if CANVAS_BASE_URL:
-            try:
-                r = ctx.request.get(CANVAS_BASE_URL.rstrip("/") + "/api/v1/courses",
-                                    params={"enrollment_state": "active", "per_page": 1}, timeout=20000)
-                checks.append(("Canvas", r.status == 200 and "json" in r.headers.get("content-type", "")))
-            except Exception:
-                checks.append(("Canvas", False))
-        for service, ready in checks:
-            print(f"{service}: {'ready' if ready else 'not verified'}")
+    b = _browser()
+    if not any("classlink.com" in t["url"] for t in b.tabs_info()):
+        b.open_tab(CLASSLINK_URL)
+    print("Sign in to ClassLink, then open Canvas and Infinite Campus from its dashboard.")
+    print("Leave the school tabs open. EDITH will verify read-only access after you continue.")
+    print("Do not share your password or MFA code in chat.")
+    input("When you have opened both services, press Enter here...")
+    checks = []
+    if IC_BASE_URL:
+        try:
+            r = b.request(IC_BASE_URL.rstrip("/") + "/campus/resources/portal/grades")
+            checks.append(("Infinite Campus", r["status"] == 200 and r["data"] is not None))
+        except Exception:
+            checks.append(("Infinite Campus", False))
+    if CANVAS_BASE_URL:
+        try:
+            r = b.request(CANVAS_BASE_URL.rstrip("/") + "/api/v1/courses",
+                          params={"enrollment_state": "active", "per_page": 1})
+            checks.append(("Canvas", r["status"] == 200 and r["data"] is not None))
+        except Exception:
+            checks.append(("Canvas", False))
+    for service, ready in checks:
+        print(f"{service}: {'ready' if ready else 'not verified'}")
     return bool(checks) and all(ready for _, ready in checks)
 
 
@@ -416,88 +372,8 @@ def open_school_portal(portal):
 
 def support_time_status(date=""):
     """Read the selected Dawg Time date, available sessions, and existing sign-ups."""
-    from integrations.browser import _STATE, _page
-
-    page = _page()
-    context = _STATE["context"]
-    pages = [p for p in context.pages if "forsyth.studentsupporttime.com" in p.url]
-    if not pages:
-        opened = open_school_portal("Student Support Time")
-        page = _STATE["page"]
-        if not page:
-            return opened
-    else:
-        page = pages[-1]
-        _STATE["page"] = page
-        page.bring_to_front()
-
-    try:
-        page.wait_for_function("document.body && document.body.innerText.includes('Dawg Time')", timeout=15000)
-        page.locator("li.list-group-item.clearfix.hover").first.wait_for(state="attached", timeout=10000)
-    except Exception:
-        return "Student Support Time is open, but its dashboard is not ready. Sign in through ClassLink and try again."
-
-    if date:
-        query = re.sub(r"\s+", " ", str(date).strip().lower())
-        try:
-            parsed = dt.date.fromisoformat(query)
-            query = f"{parsed.strftime('%b').lower()} {parsed.day}"
-        except ValueError:
-            pass
-        matches = []
-        for link in page.locator("a.btn-wide").all():
-            if not link.is_visible():
-                continue
-            label = re.sub(r"\s+", " ", (link.text_content() or "").strip().lower())
-            if query in label:
-                matches.append(link)
-        if not matches:
-            return f"I couldn't find '{date}' in the visible Student Support Time calendar."
-        matches[0].click(timeout=5000)
-        page.wait_for_timeout(700)
-
-    selected_date = "the currently selected day"
-    for link in page.locator("a.btn-wide").all():
-        if not link.is_visible():
-            continue
-        classes = link.get_attribute("class") or ""
-        if "text-bold" in classes and "btn-o" not in classes:
-            selected_date = re.sub(r"\s+", " ", (link.text_content() or "").strip())
-            selected_date = re.sub(r"^DT\s*", "", selected_date, flags=re.I)
-            break
-
-    sessions = []
-    for card in page.locator("li.list-group-item.clearfix.hover").all():
-        if not card.is_visible():
-            continue
-        lines = [line.strip() for line in card.inner_text().splitlines() if line.strip()]
-        if not lines or "No Session" in lines:
-            continue
-        detail = " — ".join(lines[1:]) if len(lines) > 1 else lines[0]
-        sessions.append(detail[:260])
-
-    signed_up = set()
-    for card in page.locator("li.openSession").all():
-        if not card.is_visible():
-            continue
-        lines = [line.strip() for line in card.inner_text().splitlines() if line.strip()]
-        if lines and "Signed Up" in lines[0]:
-            detail = " — ".join(line for line in lines[1:3] if line and line != "Details")
-            if detail:
-                signed_up.add(detail[:180])
-
-    output = [f"Dawg Time — {selected_date}"]
-    if sessions:
-        output.append("Sessions shown:")
-        output.extend(f"- {item}" for item in sessions)
-    else:
-        output.append("No sessions are shown for this date.")
-    if signed_up:
-        output.append("Already signed up:")
-        output.extend(f"- {item}" for item in sorted(signed_up))
-        check_ins = [button for button in page.locator("li.openSession button").all() if button.is_visible()]
-        output.append(f"Check-in controls visible: {len(check_ins)}")
-    return "\n".join(output)
+    from edith_agent import dawg
+    return dawg.status(date)
 
 
 def support_time_action(action, session, date=""):
