@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg">
+<title>EDITH</title>
+<style>
+:root{--bg:#0b1220;--card:#131c2e;--line:#243049;--text:#e2e8f0;--dim:#7c8aa5;--acc:#38bdf8;--ok:#34d399;--warn:#fbbf24;--bad:#f87171}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 system-ui,-apple-system,Segoe UI,sans-serif;padding-bottom:env(safe-area-inset-bottom)}
+header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 16px;display:flex;align-items:center;gap:10px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--dim)} .dot.busy{background:var(--acc);animation:p 1s infinite} @keyframes p{50%{opacity:.3}}
+header b{letter-spacing:.12em} #status{margin-left:auto;font-size:13px;color:var(--dim);max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+main{max-width:640px;margin:0 auto;padding:12px 16px 150px}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:4px 0 10px;-webkit-overflow-scrolling:touch}
+.chip{flex:none;background:var(--card);border:1px solid var(--line);color:var(--text);border-radius:999px;padding:8px 14px;font-size:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:10px 0}
+.card.need{border-color:var(--warn)} .card.q{border-color:var(--acc)}
+.row{display:flex;gap:8px;margin-top:10px} .row button{flex:1;padding:12px;border-radius:12px;border:0;font-size:16px;font-weight:600;color:#06121f}
+.yes{background:var(--ok)} .no{background:var(--bad)}
+.ev{padding:7px 0;border-bottom:1px solid var(--line);font-size:15px;white-space:pre-wrap;word-break:break-word}
+.ev small{color:var(--dim);margin-right:6px} .ev.done{color:var(--ok)} .ev.error{color:var(--bad)} .ev.approval,.ev.answer_needed{color:var(--warn)}
+.ev.step{color:var(--dim);font-size:14px} .ev.say{color:var(--acc)}
+.me{background:#1e40af;border-radius:14px;padding:8px 12px;margin:8px 0 8px 40px;white-space:pre-wrap}
+.bot{background:var(--card);border-radius:14px;padding:8px 12px;margin:8px 40px 8px 0;white-space:pre-wrap}
+#shotwrap{display:none} #shot{width:100%;border-radius:10px;border:1px solid var(--line)}
+#bar{position:fixed;left:0;right:0;bottom:0;background:var(--bg);border-top:1px solid var(--line);padding:10px 12px calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px;max-width:640px;margin:0 auto}
+#inp{flex:1;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--text);font-size:16px}
+#send,#stop{padding:12px 16px;border-radius:12px;border:0;font-size:16px;color:#06121f;background:var(--acc);font-weight:600} #stop{background:var(--bad);display:none}
+.link{background:none;border:0;color:var(--acc);font-size:14px;padding:6px 0}
+</style></head><body>
+<header><span class="dot" id="dot"></span><b>EDITH</b><span id="status">idle</span></header>
+<main>
+  <div class="chips" id="chips"></div>
+  <div id="approval"></div>
+  <div id="question"></div>
+  <button class="link" id="shotbtn">Show what the browser sees</button>
+  <div id="shotwrap"><img id="shot" alt="browser view"></div>
+  <div id="chat"></div>
+  <div id="feed"></div>
+</main>
+<div id="bar"><input id="inp" placeholder="Tell EDITH what to do…" autocomplete="off" enterkeyhint="send">
+<button id="stop">Stop</button><button id="send">Go</button></div>
+<script>
+const $=id=>document.getElementById(id), sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const QUICK=[["Odd classes","check the odd classes"],["Even classes","check the even classes"],["All grades","check all my classes"],
+ ["Big picture","what should I focus on this week"],["Briefing","morning briefing"],["Open school","open canvas and infinite campus"],
+ ["Find ECs","find summer research opportunities for juniors interested in computer science"],["Check in","check me in for student support time"]];
+let last=0, shotOn=false;
+QUICK.forEach(([l,m])=>{const b=document.createElement('button');b.className='chip';b.textContent=l;b.onclick=()=>send(m);$('chips').appendChild(b)});
+async function api(path,opts={}){
+  opts.headers=Object.assign({'Authorization':'Bearer '+(localStorage.tok||''),'Content-Type':'application/json'},opts.headers||{});
+  const r=await fetch(path,opts);
+  if(r.status===401){const t=prompt('EDITH access token:'); if(t){localStorage.tok=t; return api(path,opts)} throw new Error('unauthorized')}
+  return r.json();
+}
+function bubble(cls,text){const d=document.createElement('div');d.className=cls;d.textContent=text;$('chat').appendChild(d);d.scrollIntoView({block:'end'})}
+async function send(msg){
+  msg=(msg||$('inp').value).trim(); if(!msg) return; $('inp').value=''; bubble('me',msg);
+  try{const j=await api('/ask',{method:'POST',body:JSON.stringify({message:msg})}); if(j.reply) bubble('bot',j.reply)}
+  catch(e){bubble('bot','Could not reach EDITH: '+e.message)}
+}
+function addEvent(e){
+  if(e.kind==='info'&&!e.text) return;
+  const d=document.createElement('div');d.className='ev '+e.kind;
+  const t=new Date(e.t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const s=document.createElement('small');s.textContent=t;d.appendChild(s);d.appendChild(document.createTextNode(e.text));
+  $('feed').prepend(d);
+  while($('feed').children.length>80) $('feed').lastChild.remove();
+}
+function card(el,cls,html){el.innerHTML='';if(!html)return;const c=document.createElement('div');c.className='card '+cls;html(c);el.appendChild(c)}
+function render(j){
+  j.events.forEach(addEvent); if(j.last) last=j.last;
+  const busy=/^(Running|Queued)/.test(j.status||''); $('dot').className='dot'+(busy?' busy':'');
+  $('status').textContent=(j.status||'idle').split('\n')[0]; $('stop').style.display=busy?'block':'none';
+  card($('approval'),'need',j.pending&&(c=>{
+    const p=document.createElement('div');p.textContent=j.pending.text;c.appendChild(p);
+    const r=document.createElement('div');r.className='row';
+    [['Approve','yes',true],['Deny','no',false]].forEach(([l,k,v])=>{const b=document.createElement('button');b.className=k;b.textContent=l;
+      b.onclick=()=>api('/api/approve',{method:'POST',body:JSON.stringify({ok:v,id:j.pending.id})});r.appendChild(b)});
+    c.appendChild(r)}));
+  card($('question'),'q',j.question&&(c=>{
+    const p=document.createElement('div');p.textContent=j.question.text;c.appendChild(p);
+    const i=document.createElement('input');i.id='qi';i.style.cssText='width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);font-size:16px';
+    const b=document.createElement('button');b.className='chip';b.style.marginTop='8px';b.textContent='Reply';
+    b.onclick=()=>api('/api/answer',{method:'POST',body:JSON.stringify({text:i.value||'continue',id:j.question.id})});
+    c.appendChild(i);c.appendChild(b)}));
+}
+async function poll(){
+  for(;;){try{render(await api('/api/events?since='+last+'&wait=15'))}catch(e){await sleep(3000)} await sleep(150)}
+}
+$('send').onclick=()=>send(); $('inp').addEventListener('keydown',e=>{if(e.key==='Enter')send()});
+$('stop').onclick=()=>api('/api/cancel',{method:'POST',body:'{}'});
+$('shotbtn').onclick=()=>{shotOn=!shotOn;$('shotwrap').style.display=shotOn?'block':'none';$('shotbtn').textContent=shotOn?'Hide browser view':'Show what the browser sees'};
+setInterval(()=>{if(shotOn)$('shot').src='/api/shot?token='+encodeURIComponent(localStorage.tok||'')+'&t='+Date.now()},3000);
+poll();
+</script></body></html>

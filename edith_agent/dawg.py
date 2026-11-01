@@ -54,7 +54,7 @@ _CLICK_CHECKIN = """(arg) => {
 
 def _open():
     b = get_browser()
-    tab = next((t for t in b.tabs_info() if HOST in t["url"]), None)
+    tab = next((t for t in reversed(b.tabs_info()) if HOST in t["url"]), None)   # newest matching tab
     if tab:
         b.activate(tab["id"])
         tid = tab["id"]

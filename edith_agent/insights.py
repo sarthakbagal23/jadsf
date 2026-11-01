@@ -27,7 +27,9 @@ def record_grades(rows, min_gap_hours=6):
         return
     hist = _read(HISTORY, [])
     if hist and time.time() - hist[-1]["ts"] < min_gap_hours * 3600:
-        hist[-1] = {"ts": time.time(), "rows": rows}      # refresh in place
+        merged = {r["course"]: r for r in hist[-1]["rows"]}   # an odd-day sweep must not erase the even classes
+        merged.update({r["course"]: r for r in rows})
+        hist[-1] = {"ts": time.time(), "rows": list(merged.values())}
     else:
         hist.append({"ts": time.time(), "rows": rows})
     HISTORY.write_text(json.dumps(hist[-60:], indent=1), encoding="utf-8")

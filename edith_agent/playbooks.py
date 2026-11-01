@@ -55,15 +55,20 @@ def open_sites(names):
     if isinstance(names, str):
         names = split_names(names)
     known = sites()
-    urls, labels, unknown = [], [], []
+    urls, labels, unknown, apps = [], [], [], []
+    from tools import APPS, open_app
     for n in names:
         n = n.strip().lower()
-        if n in known:
+        if n in APPS:                                  # a desktop app, not a website
+            apps.append(open_app(n))
+        elif n in known:
             urls.append(known[n]); labels.append(n)
         elif re.search(r"\.[a-z]{2,}(/|$)", n):
             urls.append(n); labels.append(n)
         else:
             unknown.append(n)
+    if not urls and apps:
+        return " ".join(apps)
     if not urls:
         return f"I don't know a site called {', '.join(unknown) or 'that'}. I know: {', '.join(sorted(known))}."
     b = get_browser()
@@ -73,8 +78,10 @@ def open_sites(names):
     out = "Opened " + ", ".join(ok) + "." if ok else "Couldn't open anything."
     if bad:
         out += " Problems: " + "; ".join(bad)
+    if apps:
+        out += " " + " ".join(apps)
     if unknown:
-        out += " Unknown: " + ", ".join(unknown) + "."
+        out += " Not set up: " + ", ".join(unknown) + " (add it to .env or data/sites.json)."
     return out
 
 
@@ -214,10 +221,9 @@ def grades_sweep(which="all", keep_open=True):
     tr = insights.trends()
     lines = [f"Grades - {label}:"]
     for r in rows:
-        bits = [f"{r['course']}:"]
-        bits.append(f"Canvas {r['score']:.1f}%" if r["score"] is not None else "Canvas ?")
+        bits = [f"Canvas {r['score']:.1f}%" if r["score"] is not None else "Canvas ?"]
         if r["letter"]:
-            bits[-1] += f" ({r['letter']})"
+            bits[0] += f" ({r['letter']})"
         if r["ic"] is not None:
             bits.append(f"IC {r['ic']:.1f}%")
         t = tr.get(r["course"])
@@ -225,7 +231,7 @@ def grades_sweep(which="all", keep_open=True):
             bits.append(f"{'+' if t[1] > 0 else ''}{t[1]} since last check")
         if r["api"] is not None and r["page"] is not None and abs(r["api"] - r["page"]) > 0.6:
             bits.append("(page and API disagree - rounding or weighting)")
-        lines.append("  " + "  |  ".join(bits))
+        lines.append(f"  {r['course']}: " + "  |  ".join(bits))
     school._save_cache(grades=[{"course": r["course"], "score": r["ic"] if r["ic"] is not None else r["score"],
                                 "letter": r["letter"], "source": "IC" if r["ic"] is not None else "Canvas"}
                                for r in rows if (r["ic"] is not None or r["score"] is not None)])

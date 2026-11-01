@@ -49,6 +49,17 @@ class H(BaseHTTPRequestHandler):
               <button id="del" type="button" onclick="fetch('/delete',{method:'POST'})">Delete Account</button>
               <button id="checkin" type="button" onclick="fetch('/checkin',{method:'POST'})">Check In</button>
               </form><div style="height:3000px"></div><button id="far" onclick="fetch('/far',{method:'POST'})">Far Button</button>""", "Student Support"))
+        if path == "/dawg":
+            return self._send(page("""<h1>Dawg Time</h1>
+              <a class="btn-wide text-bold" href="#">DT Oct 29</a>
+              <a class="btn-wide btn-o" href="#" onclick="document.title='oct30';return false">DT Oct 30</a>
+              <ul><li class="list-group-item clearfix hover"><div>Period 1</div><div>Mr. Smith - Chemistry help</div><div>8:00-8:30</div></li>
+              <li class="list-group-item clearfix hover"><div>No Session</div></li></ul>
+              <ul><li class="openSession"><div>Signed Up</div><div>Chemistry help</div><div>Mr. Smith</div>
+              <button id="ci" onclick="fetch('/checkin',{method:'POST'});this.remove()">Check In</button></li></ul>""", "Dawg Time"))
+        if path == "/login":
+            return self._send(page('<h1>Sign in</h1><input name="user" placeholder="Username">'
+                                   '<input type="password" name="pw" placeholder="Password"><button>Sign in</button>', "Sign in"))
         if path == "/popup":
             return self._send(page('<a target="_blank" href="/courses/1/grades">open grades</a>', "Popup"))
         if path == "/frame":

@@ -53,6 +53,7 @@ class Task:
     created: float = field(default_factory=time.time)
     cancel: threading.Event = field(default_factory=threading.Event)
     fn: object = None                    # for playbooks
+    surface: str = "browser"             # browser | desktop
     log: list = field(default_factory=list)
 
 
@@ -262,10 +263,15 @@ class AgentRunner:
             if t.cancel.is_set():
                 return False, "Cancelled."
             try:
-                tabs = self.b.tabs_info()
+                tabs = [] if t.surface == "desktop" else self.b.tabs_info()
             except Exception as e:
                 return False, str(e)
-            if not tabs:
+            if t.surface == "desktop":
+                from edith_agent import desktop
+                obs_text, hosts, obs = desktop.observe_text(), [], None
+                if not t.private and privacy.is_school_text(obs_text):
+                    t.private = True                  # a school window is open: keep it on the local model
+            elif not tabs:
                 obs_text, hosts, obs = "No tab is open yet. Open one with open_tab.", [], None
             else:
                 obs = self.b.observe(max_elems=60 if t.private else 100)
@@ -355,10 +361,10 @@ class TaskManager:
         self._ensure_worker()
         return task
 
-    def start(self, goal, start_url="", grants=None, private=None, max_steps=None):
-        """Queue a free-form browser task."""
+    def start(self, goal, start_url="", grants=None, private=None, max_steps=None, surface="browser"):
+        """Queue a free-form browser (or desktop) task."""
         g = safety.grants_from_request(goal) if grants is None else set(grants)
-        task = Task(goal=goal, start_url=start_url, grants=g,
+        task = Task(goal=goal, start_url=start_url, grants=g, surface=surface,
                     private=privacy.is_school_text(goal) if private is None else private,
                     max_steps=max_steps or AGENT_MAX_STEPS)
         return self.submit(task)

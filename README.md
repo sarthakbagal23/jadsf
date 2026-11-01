@@ -173,6 +173,57 @@ right-click to close.
 **Security.** The server now listens on this laptop only. Set `EDITH_HOST` and
 `EDITH_TOKEN` together before exposing it, since it can show your grades.
 
+## v5: The EDITH agent - it doesn't just read, it acts
+
+EDITH now drives a real browser (your signed-in EDITH Chrome) and, if you turn it on, your laptop.
+It opens tabs, reads what is on them, and reports **while it looks**, in the terminal, on your phone,
+and by voice.
+
+**Try these** (they run instantly, no model call):
+
+| Say | What happens |
+| --- | --- |
+| `open canvas and github` | both open at once, each in its own tab |
+| `check the odd classes` / `even classes` / `all classes` | a Canvas grades tab per class opens in parallel; EDITH reads each one aloud as it lands, adds Infinite Campus, and shows the change since last time |
+| `chem is odd` / `my even classes are lang, precalc` | teaches it your block schedule (saved in `data/schedule.json`) |
+| `find me summer research opportunities` | searches the web, opens the best pages side by side, reads them, keeps a shortlist (`data/opportunities.json`) - dates the page doesn't actually contain are flagged "unverified" |
+| `check me in for student support time` | reads Dawg Time, clicks Check In for the session you're signed up for, and verifies it worked |
+| `sign me up for dawg time with Mr. Smith tomorrow` | the agent reads the sessions and signs you up for what you asked |
+| `what should I focus on this week` | the big picture: grades and trends, deadlines, SAT countdown, study time, opportunity deadlines |
+| `yes` / `no` | answers an approval EDITH is waiting on |
+
+Anything open-ended ("go to X and find Y") goes to the **browse** tool: a loop that plans, looks at the
+page as numbered elements (not screenshots), takes one narrated action at a time, and stops itself if it
+repeats or gets stuck. It remembers one-line tips per site (`data/site_lessons.json`).
+
+**What it will and won't do on its own**
+- If your request clearly names an action ("check me in", "sign me up"), it proceeds - no second yes.
+- Anything risky you did **not** ask for pauses and asks you (terminal, voice, or the phone's Approve button).
+- Purchases and deletions **always** ask.
+- Text on a web page can never authorise anything - only your own words can.
+- It never types a password or verification code. At a sign-in page it waits for you to do it.
+- School pages and school tasks use your **local** Ollama model only; nothing goes to Groq/OpenRouter.
+  The grade sweep and Dawg Time flows use no model at all, so they're fast and fully private.
+
+**Phone remote** (`python server.py`, or `run.bat` option 4): open the page on your phone and "Add to Home
+Screen". You get quick-action buttons, a live feed of what EDITH is doing, Approve/Deny cards, a "what the
+browser sees" view, and a chat box. To reach it away from home: install Tailscale, then set
+`EDITH_HOST=0.0.0.0` **and** a long random `EDITH_TOKEN` in `.env`. For push notifications set
+`EDITH_NTFY_TOPIC` and subscribe in the ntfy app (pushes are generic, never grade details).
+
+**Laptop control** (off by default): set `EDITH_COMPUTER_USE=1` and `pip install -r requirements-desktop.txt`.
+EDITH can focus windows, click buttons **by name** through Windows UI Automation, type, and press keys.
+`computer_task` hands it a goal. Guards: alt+F4 / lock / run shortcuts are blocked, it won't type into a
+sign-in or password-manager window, and it asks before clicking anything that looks like buy/delete/send.
+
+**Tests:** `python test_agent.py` (real headless Chromium against a mock school site) and `python test_smoke.py`.
+
+**Honest limits:** I could not reach Forsyth's live Canvas, Infinite Campus or Dawg Time from where this was
+built. The Canvas grades-page parsing and the Dawg Time check-in use the page structure from your existing
+`support_time_status`; sign-up goes through the agent because that page's markup is unknown. Run
+`check the odd classes` once and tell me what it prints. Desktop control is written for Windows UI Automation
+and only unit-tested here.
+
 ## Next steps (when v1 feels good)
 
 - HUD dashboard in the browser (your Vite stack)
